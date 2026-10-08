@@ -2,6 +2,10 @@
 
 Exploring a Rust-powered future for live streaming and recording.
 
+This started off as a patch to obs to fix a crash bug. They closed the PR and banned me from the org because the crash fix was from an AI.
+
+It's time to get OBS out of the hands of those who would turn a project into a political instrument.
+
 We're starting from OBS Studio and its supporting repositories, with the goal of gradually bringing Rust into the codebase while preserving the capabilities that make OBS useful.
 
 This project is in its early stages. Our repositories currently preserve the original OBS source and Git history; the Rust work is ahead of us.
