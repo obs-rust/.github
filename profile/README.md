@@ -8,14 +8,14 @@ This project is in its early stages. Our repositories currently preserve the ori
 
 ## Explore the projects
 
-| Project | What you'll find |
-| :--- | :--- |
-| **[🎥 OBS Studio](https://github.com/obs-rust/obs-studio)** | The core app for live streaming and recording. Start here. |
-| **[🌐 OBS Browser](https://github.com/obs-rust/obs-browser)** | Browser sources for overlays, alerts, and web content. |
-| **[🔌 OBS WebSocket](https://github.com/obs-rust/obs-websocket)** | Remote control and automation through WebSocket. |
-| **[📦 OBS Dependencies](https://github.com/obs-rust/obs-deps)** | Libraries and build dependencies supporting OBS. |
-| **[🛠️ Plugin Template](https://github.com/obs-rust/obs-plugintemplate)** | A starting point for building OBS plugins. |
-| **[🎞️ FFmpeg](https://github.com/obs-rust/FFmpeg)** | Audio and video processing, encoding, and decoding. |
+| Original (C/C++) | Rust equivalent | Status |
+| :--- | :--- | :--- |
+| **[🎥 OBS Studio](https://github.com/obs-rust/obs-studio)** | **[obs-studio-rs](https://github.com/obs-rust/obs-studio-rs)** | Not started |
+| **[🌐 OBS Browser](https://github.com/obs-rust/obs-browser)** | — | Not started |
+| **[🔌 OBS WebSocket](https://github.com/obs-rust/obs-websocket)** | — | Not started |
+| **[📦 OBS Dependencies](https://github.com/obs-rust/obs-deps)** | — | Not started |
+| **[🛠️ Plugin Template](https://github.com/obs-rust/obs-plugintemplate)** | — | Not started |
+| **[🎞️ FFmpeg](https://github.com/obs-rust/FFmpeg)** | — | Not started |
 
 [Browse all repositories →](https://github.com/orgs/obs-rust/repositories)
 
