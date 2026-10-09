@@ -10,6 +10,10 @@ We're starting from OBS Studio and its supporting repositories, with the goal of
 
 This project is in its early stages. Our repositories currently preserve the original OBS source and Git history; the Rust work is ahead of us.
 
+## Constitution
+
+Every repository here is governed by the **[Constitution of the obs-rust Project](https://github.com/obs-rust/constitution/blob/main/CONSTITUTION.md)**: equal use for everyone, no test of belief, judged by the work. It supersedes every other document in the organization.
+
 ## Explore the projects
 
 | Original (C/C++) | Rust equivalent | Status |
