@@ -20,6 +20,23 @@ Codex and other agents without skills: read this file by hand
 
 ## 0. Each tick: find the repos with work
 
+Start from the **obs-rust Tracker** org project, the master list of every
+open issue and PR in the org. `org-tracker-sync` in this repo refreshes it
+every 30 minutes and sets Status from live state: `Ready to merge`,
+`Needs fix`, `Needs decision`, `In review`, `In progress`, `Triage`, `Done`.
+Work the columns in that order:
+
+```sh
+gh project item-list <PROJECT_NUMBER> --owner obs-rust --limit 500 --format json \
+  -q '.items[]|select(.status!="Done")|"\(.status)\t\(.content.repository)#\(.content.number)\t\(.title)"' | sort
+```
+
+(`PROJECT_NUMBER` is the repo variable of the same name in obs-rust/.github;
+your token needs the `project` scope.) The board can be up to 30 minutes
+old, so check an item's live state before you act on it. If the board is
+missing or the sync is failing, use the direct sweep below, and report the
+broken sync.
+
 Don't hard-code the repo list; repos get added. Every tick:
 
 ```sh
