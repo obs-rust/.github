@@ -8,7 +8,7 @@ name: org-tracker-sync
 # Auth: the "obs-rust Multiview" GitHub App (ID 5460858), installed on all repos with
 # Projects: read/write (org) and Issues, Pull requests, Metadata: read.
 #   vars.PROJECT_APP_CLIENT_ID    the App's client ID
-#   vars.PROJECT_NUMBER           the Tracker project's number
+#   vars.PROJECT_NUMBER           the Multiview project's number (1)
 #   secrets.PROJECT_APP_PRIVATE_KEY  the App's private key (PEM)
 
 on:
