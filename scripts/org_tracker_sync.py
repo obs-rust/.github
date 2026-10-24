@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""Keep the obs-rust Tracker project in step with every repo in the org.
+"""Keep the obs-rust Multiview project in step with every repo in the org.
 
 Each run:
 

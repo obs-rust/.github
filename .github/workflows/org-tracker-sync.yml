@@ -1,11 +1,11 @@
 name: org-tracker-sync
 
-# Keeps the obs-rust Tracker project (the org-wide master list of open
+# Keeps the obs-rust Multiview project (the org-wide master list of open
 # issues and PRs) in step with every repo in the org. One workflow here
 # covers all repos, so no repo needs its own add-to-project workflow or
 # secret, and new repos join on their own.
 #
-# Auth: the "obs-rust Project Sync" GitHub App, installed on all repos with
+# Auth: the "obs-rust Multiview" GitHub App (ID 5460858), installed on all repos with
 # Projects: read/write (org) and Issues, Pull requests, Metadata: read.
 #   vars.PROJECT_APP_CLIENT_ID    the App's client ID
 #   vars.PROJECT_NUMBER           the Tracker project's number
