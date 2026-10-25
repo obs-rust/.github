@@ -1,85 +1,85 @@
 ---
 name: obs-org-worker
-description: Org-wide worker playbook for the obs-rust GitHub organization. Use when you act as a worker who picks the next most important issue anywhere in the obs-rust org (obs-studio, obs-deps, obs-browser, obs-websocket, obs-studio-libs, …), claims it, fixes it and lands the PR, following each repo's own rules.
+description: Worker playbook for the whole obs-rust GitHub organization. Use when you pick up work anywhere in the org (obs-studio, obs-deps, obs-browser, obs-websocket, obs-studio-libs, …): choose a Ready issue, claim it (which assigns you), land a PR in the merge queue, then move on to the next issue.
 ---
 
-# obs-org-worker: picking up work anywhere in obs-rust
+# obs-org-worker: Ready issue to merge queue, then the next one
 
-The `obs-worker` and `obs-worker-loop` skills in obs-rust/obs-studio cover
-that repo. This skill picks work across the whole org and says how to do
-it in a repo that has no worker skill of its own.
+How work moves: [WORKFLOW.md](../../../WORKFLOW.md). In obs-rust/obs-studio,
+also follow that repo's `obs-worker` skill for its test tiers and CI.
 
-The [constitution](https://github.com/obs-rust/constitution/blob/main/CONSTITUTION.md)
-overrides this file. A repo's own `AGENTS.md`, `CONTRIBUTING.md` or worker
-skill overrides the defaults below for that repo.
+Agents without skills: `gh api repos/obs-rust/.github/contents/.claude/skills/obs-org-worker/SKILL.md -H 'Accept: application/vnd.github.raw'`.
 
-Codex and other agents without skills: read this file by hand
-(`gh api repos/obs-rust/.github/contents/.claude/skills/obs-org-worker/SKILL.md -H 'Accept: application/vnd.github.raw'`).
-
-## 1. Move your own PRs first
+## 1. Your open PRs first
 
 ```sh
-gh search prs --owner obs-rust --author @me --state open \
-  --json repository,number,title,isDraft
+gh search prs --owner obs-rust --author @me --state open --json repository,number,title,isDraft
 ```
 
-Fix failures, answer reviews and rebase conflicts on every one before you
-start something new.
+Answer reviews and fix failures on PRs that are **not** in the merge queue
+yet. A PR in the queue is the coordinator's now; leave it.
 
-## 2. Pick the most important issue in the org
+## 2. Pick a Ready issue
+
+The [board](https://github.com/orgs/obs-rust/projects/1) lists them
+(Status **Ready**), or:
 
 ```sh
-gh search issues --owner obs-rust --state open --no-assignee \
-  --json repository,number,title,labels,createdAt,commentsCount --limit 100
+gh search issues --owner obs-rust --state open --label ready --no-assignee \
+  --json repository,number,title,labels --limit 100
 ```
 
-Rank by: master or release broken in any repo > a bug that blocks
-obs-studio (a dependency build in obs-deps or obs-studio-libs, a plugin
-crash in obs-browser) > user-facing bugs > the rest. Skip issues
-with a fresh claim (`claimed` label or a `Claiming:` comment under 24 h
-old), `decision-needed` or `human-review-needed` issues, and anything in
-`constitution`. Before you start, search for open PRs in that repo that
-already fix it.
+Highest priority first (`P0` > `P1` > `P2` > `P3`), then oldest. Prefer
+work that unblocks others. A `P0` (red master, broken release) needs no
+`ready` label.
 
-An obs-studio issue: switch to the obs-studio `obs-worker` skill and
-follow it exactly. It has the testing tiers and CI rules.
+Nothing Ready that you can do? Take an investigation instead: an issue in
+**Triage** or **Investigating** with nobody on it.
 
-## 3. Claim, then work in the right checkout
+## 3. Claim it
 
-Comment `Claiming: <one-line plan>` on the issue (and add the `claimed`
-label where the repo has it) before you write code.
+Comment on the issue, first line:
 
-Work in the existing local checkout of that repo. Look under
-`~/dev/obs-rust/` and `~/dev/obs-rust/obs-studio2-extern/`, fetch, and branch
-from the default branch. Clone into `~/dev/obs-rust/obs-studio2-extern/<repo>`
-only when there is no local copy. Never make a second clone or worktree of a
-repo you already have; build caches are keyed to the path.
+- `Claiming: <one-line plan>`, then a short numbered plan and when the first
+  PR opens. The bot assigns you. A refusal comes as a reply that says why
+  (not Ready, blocked, decision open, someone else holds it).
+- `Claiming: investigation`: research an underdefined issue. When it meets the
+  [definition of Ready](../../../WORKFLOW.md#definition-of-ready), comment
+  `/ready` with the reproduction and acceptance criteria. You keep the claim
+  and can implement it, or `Releasing` it for someone else.
 
-## 4. Do the work
+The claim lasts **24 hours** from your last progress (a comment, a commit or
+a review on your PR that references the issue). Post progress, or it lapses
+and someone else may take it. Waiting on something outside your control:
+`Blocked: <reason>` (7 days). A question with no safe default:
+`Decision needed: <question>`.
 
-- Read the repo's `AGENTS.md`/`CONTRIBUTING.md`/README build section and
-  follow its build, lint and test commands.
-- **RED then GREEN** everywhere: a commit with a failing test or
-  reproduction, then the fix. If the repo has no test harness, put the exact
-  reproduction and its before/after output in the PR body.
-- Keep the repo's style and commit-subject format (look at `git log`).
-- In obs-websocket, fix the plugin's own bugs only. Never change it to
-  suit Rust OBS (obs-studio AGENTS.md).
-- A change that obs-studio must pick up (a new obs-deps or
-  obs-studio-libs build, a cef or obs-browser fix): link the follow-up
-  obs-studio issue or PR in both places.
-- High-risk security bugs go to a private advisory, never a public
-  issue, PR or branch (obs-studio SECURITY.md, "Two tiers").
+## 4. Work in the right checkout
 
-## 5. Open the PR and land it
+Use the existing local checkout of that repo (`~/dev/obs-rust/`,
+`~/dev/obs-rust/obs-studio2-extern/`); clone there only if none exists.
+Never a second clone or worktree of a repo you already have. Branch from the
+default branch. Follow the repo's AGENTS.md for build, lint and test.
 
-Open the PR against the default branch as soon as RED exists (a draft is
-fine), with `Fixes #<N>` and the RED/GREEN evidence. Keep it moving until
-it merges: repos with a merge queue use `gh pr merge --auto`. In repos
-without one, ask for review in a comment once CI is green; the coordinator
-(`obs-org-coordinator`) merges green, reviewed PRs.
+RED then GREEN: a failing test (or, with no harness, an exact reproduction)
+first, then the fix. Open the PR as a draft as soon as RED exists, with
+`Fixes #<N>` so the board links it.
 
-## 6. Report
+## 5. Land it, then move on
 
-When the PR is merged or handed off, say what you did, and pick the next
-issue (§2) if you run on a timer.
+Get it green and mergeable, then `gh pr merge <N> --auto` (repos with a
+merge queue). Once it is **in the queue, you are done**: comment
+`Handed off to the coordinator` on the PR and go to §2 for the next issue.
+Ejections, rebases and CI repairs after that are the coordinator's.
+
+In a repo without a merge queue, ask for review once CI is green; the
+coordinator merges it.
+
+## Rules that hold everywhere
+
+- High-risk security bugs (remote reach, credential leaks) go to a private
+  advisory, never a public issue, PR or branch.
+- obs-websocket: fix the plugin's own bugs only; never change it to suit
+  Rust OBS.
+- A change obs-studio must pick up (deps, libs, cef, browser): link the
+  follow-up obs-studio issue in both places.
