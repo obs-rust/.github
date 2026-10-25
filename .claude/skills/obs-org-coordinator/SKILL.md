@@ -22,7 +22,7 @@ Codex and other agents without skills: read this file by hand
 
 Start from the **obs-rust Multiview** org project (https://github.com/orgs/obs-rust/projects/1), the master list of every
 open issue and PR in the org. `org-tracker-sync` in this repo refreshes it
-every 30 minutes and sets Status from live state: `Ready to merge`,
+every 30 minutes and sets Status from live state: `In merge queue`, `Ready to merge`,
 `Needs fix`, `Needs decision`, `In review`, `In progress`, `Triage`, `Done`.
 Work the columns in that order:
 
