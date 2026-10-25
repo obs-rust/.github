@@ -71,8 +71,6 @@ one tick, and covers for scheduled runs that GitHub skips or delays: in one
 case obs-studio's hourly sweep went 4 hours without running. A repo with a
 caller sees only no-op replays.
 
-A caller makes a repo answer at once (it runs on each comment):
-
 A repo turns claims on with this workflow (`.github/workflows/claim-bot.yaml`):
 
 ```yaml
