@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS board_values (content TEXT, field TEXT, value TEXT,
   UNIQUE(content, field));
 CREATE TABLE IF NOT EXISTS log (at TEXT, actor TEXT, what TEXT);
 CREATE TABLE IF NOT EXISTS red (repo TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS noqueue (repo TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS leases (key TEXT PRIMARY KEY, owner TEXT, at TEXT);
 """
 
@@ -251,6 +252,7 @@ class SimBackend:
                     reviews,
                     title,
                     self.q("SELECT count(*) FROM items WHERE parent=?", iid)[0][0],
+                    not self.q("SELECT 1 FROM noqueue WHERE repo=?", repo),
                 )
             )
         return out
@@ -425,6 +427,9 @@ class World:
 
     def review(self, repo: str, pr: int) -> None:
         self.gh.x("UPDATE items SET reviews=reviews+1 WHERE id=?", self.gh.node(repo, pr))
+
+    def no_merge_queue(self, repo: str) -> None:
+        self.gh.x("INSERT OR IGNORE INTO noqueue VALUES (?)", repo)
 
     def master(self, repo: str, red: bool) -> None:
         self.gh.x("DELETE FROM red WHERE repo=?", repo)

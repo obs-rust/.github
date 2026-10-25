@@ -219,7 +219,10 @@ class GhBackend:
 
     # ---- board --------------------------------------------------------
 
+    queued: set[str] = set()  # repos whose default branch has a merge queue
+
     def items(self, org: str) -> list[Item]:
+        self.queued = set()
         repos = self._repos(org)
         with ThreadPoolExecutor(READ_WORKERS) as pool:
             return [
@@ -232,12 +235,13 @@ class GhBackend:
             d = graphql(
                 """query($o: String!, $c: String) { organization(login: $o) {
                   repositories(first: 100, after: $c, isArchived: false) {
-                    pageInfo { hasNextPage endCursor } nodes { name } } } }""",
+                    pageInfo { hasNextPage endCursor } nodes { name mergeQueue { id } } } } }""",
                 o=org,
                 **({"c": cursor} if cursor else {}),
             )["organization"]["repositories"]
             # Private advisory forks never reach the public board.
             repos += [n["name"] for n in d["nodes"] if "-ghsa-" not in n["name"]]
+            self.queued |= {n["name"] for n in d["nodes"] if n["mergeQueue"]}
             if not d["pageInfo"]["hasNextPage"]:
                 return repos
             cursor = d["pageInfo"]["endCursor"]
@@ -313,6 +317,7 @@ class GhBackend:
                     merge_state=n["mergeStateStatus"],
                     checks=rollup.get("state", ""),
                     reviews=n["reviews"]["totalCount"],
+                    merge_queue=repo in self.queued,
                 )
             )
         return out

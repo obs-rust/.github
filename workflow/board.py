@@ -36,6 +36,8 @@ from datetime import datetime, timedelta
 
 from workflow.model import Board, Item
 
+TRACKER = "tracker"  # a tracker whose children are not issues yet
+
 STATUSES = [
     "Triage",
     "Tracker",
@@ -96,7 +98,7 @@ def status(item: Item, now: datetime) -> str:
             return "Investigating"
         if item.assignees:
             return "In progress"
-        if item.sub_issues:
+        if item.sub_issues or TRACKER in item.labels:
             return "Tracker"
         if "ready" in labels or {"P0", "critical"} & labels:
             return "Ready"

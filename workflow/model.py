@@ -72,6 +72,7 @@ class Item:
     reviews: int = 0  # PR reviews submitted
     title: str = ""
     sub_issues: int = 0  # a tracker issue has sub-issues
+    merge_queue: bool = True  # the repo's default branch has a merge queue
 
 
 @dataclass

@@ -7,7 +7,9 @@ coordinator's list is wrong, work piles up unseen, so every rule is here.
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from datetime import timedelta
 
 from workflow import coordinator
 from workflow.sim import World
@@ -117,6 +119,66 @@ class PullRequestTasks(Case):
         self.assertEqual(self.kinds(n), [])
 
 
+class NoMergeQueueRepos(Case):
+    """obs-deps and friends have no merge queue: `gh pr merge --auto` fails there."""
+
+    def test_green_reviewed_pr_is_merged_not_enqueued(self):
+        self.w.no_merge_queue(R)
+        n = self.green_pr()
+        self.assertEqual(self.kinds(n), ["merge"])
+
+    def test_green_unreviewed_pr_is_reviewed_first(self):
+        self.w.no_merge_queue(R)
+        n = self.w.open_pr(R, "alice")
+        self.w.ci(R, n, passed=True)
+        self.assertEqual(self.kinds(n), ["review"])
+
+
+class FlowTestFindings(Case):
+    """Gaps a coordinator hit on its first live tick."""
+
+    def test_legacy_claimed_label_is_not_triaged(self):
+        # A repo without the claim bot never migrates its `claimed` labels.
+        n = self.w.open_issue(R, labels={"claimed"})
+        item = next(i for i in self.w.gh.items("obs-rust") if i.number == n)
+        item.created -= timedelta(hours=2)
+        self.assertIsNone(coordinator.issue_task(item, self.w.now))
+        item.labels.add("needs-investigation")
+        self.assertIsNone(coordinator.issue_task(item, self.w.now))
+
+    def test_tracker_label_without_sub_issues_leaves_triage(self):
+        n = self.w.open_issue(R, labels={"tracker"})
+        self.w.advance(hours=2)
+        self.assertEqual(self.kinds(n), [])
+        self.w.sync()
+        self.assertEqual(self.w.status(R, n), "Tracker")
+
+    def test_report_shows_labels(self):
+        n = self.w.open_issue(R, labels={"docs"})
+        self.w.advance(hours=2)
+        self.assertIn(f"#{n} (2 h) ", coordinator.report(self.work()))
+        self.assertIn("[docs]", coordinator.report(self.work()))
+
+    def test_json_output_is_only_json(self):
+        import contextlib
+        import io
+        import json
+        import sys
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as d:
+            db = f"{d}/w.db"
+            w = World(db)
+            w.open_issue(R)
+            w.advance(hours=2)
+            w.shutdown()
+            out = io.StringIO()
+            with mock.patch.object(sys, "argv", ["c", "--json", "--sim", db]):
+                with contextlib.redirect_stdout(out):
+                    coordinator.main()
+            self.assertEqual(json.loads(out.getvalue())[0]["kind"], "triage")
+
+
 class IssueTasks(Case):
     def test_new_issue_is_triaged_after_an_hour(self):
         n = self.w.open_issue(R)
@@ -216,6 +278,10 @@ class OrderAndReport(Case):
         req = self.green_pr(author="ivy")
         self.w.enqueue(R, req)
         self.w.eject(R, req)
+        self.w.no_merge_queue("obs-rust/obs-deps")
+        mrg = self.w.open_pr("obs-rust/obs-deps", "jo")
+        self.w.review("obs-rust/obs-deps", mrg)
+        self.w.ci("obs-rust/obs-deps", mrg, passed=True)
         self.w.advance(hours=1)
         self.assertEqual(self.kinds(), coordinator.ORDER)
         del inv, stalled, tri, dec, rev

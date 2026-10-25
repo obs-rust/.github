@@ -42,7 +42,8 @@ coordinator holds, and orders them:
 | `fix-master` | a default branch's last push run failed | find the PR that broke it; fix or revert first. Queued PRs fail until it is green |
 | `requeue` | a green PR now conflicts (ejected from the queue) | rebase, keep both sides of list conflicts, `--force-with-lease`, `gh pr merge --auto` |
 | `fix-ci` | a PR's checks fail | §3 |
-| `enqueue` | green and mergeable, not queued | `gh pr merge <N> -R <repo> --auto`, then confirm it is in the queue |
+| `enqueue` | green and mergeable, not queued | `gh pr merge <N> -R <repo> --auto`, then confirm: `gh pr view <N> -R <repo> --json isInMergeQueue` |
+| `merge` | green and reviewed, in a repo with **no** merge queue | `gh pr merge <N> -R <repo> --squash` |
 | `rebase` | conflicts or is behind | `gh pr update-branch <N> --rebase`, or by hand |
 | `review` | no review yet | review it (§4) |
 | `decide` | `decision-needed` | §5 |
@@ -100,6 +101,11 @@ Correctness, RED then GREEN, the repo's required test tiers, the features
 ledger, the repo's AGENTS.md. Post the findings as a PR review. Fix small
 mechanical issues yourself as a fixup commit; leave design to the author.
 
+One review per PR per tick: check `gh pr view <N> --json reviews` first, so
+a second coordinator (or your retry) doesn't post a duplicate. GitHub won't
+let you approve a PR opened by the account you run as: post a `--comment`
+review with your verdict; that counts as the review.
+
 ## 5. Deciding
 
 Research the question in the rules, docs, code and earlier decisions.
@@ -113,14 +119,26 @@ taste: relabel `human-review-needed` with the options and a recommendation.
 
 Check the issue against the [definition of Ready](../../../WORKFLOW.md#definition-of-ready):
 
-- **Meets it:** comment `/ready`, add `P0`..`P3` and `size:S`..`size:XL`.
+- **Meets it:** comment `/ready` with why, then set the labels yourself in
+  one call: `gh issue edit <N> -R <repo> --add-label ready,P2,size:S`. Repos
+  without the claim bot never answer `/ready`, and the label is what takes
+  the issue out of triage; where the bot runs, the extra add is harmless.
   Split an XL into sub-issues.
 - **Underdefined:** comment what is missing and `/investigate`.
 - **Not a task** (an idea, a question): move it to Discussions and close it.
 - **Already fixed or a duplicate:** close it with the link.
-- **A tracker:** add its children as sub-issues; it leaves triage.
+- **A tracker:** add its children as sub-issues; it leaves triage. A tracker
+  whose items aren't issues yet (a checklist): label it `tracker`.
+- **Asks to change the obs-websocket plugin to suit Rust OBS:** the
+  AGENTS.md directive forbids it. Retitle it as the Rust OBS fix (or close it
+  pointing to one) and quote the directive.
+- **Looks finished** (its PRs merged): check each acceptance criterion
+  against master, then close it with the PR links, even if claimed; the
+  claimant gets the notification.
 
-A large backlog: do the oldest 15 each tick. The list shows the count.
+A large backlog: do the oldest 15 each tick (the list shows the count and
+each item's labels). Big meta and port trackers sit at the front; label them
+`tracker` on sight so small issues reach the front.
 
 ## 7. Outside the list
 
