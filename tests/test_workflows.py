@@ -40,5 +40,22 @@ class ThinWorkflowTest(unittest.TestCase):
         self.assertRegex(text, r'cron: "\*/30 \* \* \* \*"')
 
 
+class LabelsTest(unittest.TestCase):
+    def test_every_label_the_code_reads_is_created(self):
+        from workflow import board, claims, labels
+
+        read = {
+            claims.READY,
+            claims.INVESTIGATE,
+            claims.BLOCKED,
+            claims.LOCKED,
+            claims.DECISION,
+            claims.HUMAN_REVIEW,
+            claims.P0,
+        }
+        read |= set(board.PRIORITIES) | {f"size:{s}" for s in board.SIZES}
+        self.assertLessEqual(read, set(labels.LABELS))
+
+
 if __name__ == "__main__":
     unittest.main()
