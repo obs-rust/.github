@@ -58,6 +58,7 @@ __all__ = ["Comment", "Issue", "LinkedPR"]
 
 BOT = "github-actions[bot]"
 BOT_PREFIX = "**Claim bot:**"
+TRACKER = "tracker"  # work lives in sub-issues; never claimed itself
 CLAIMED = "claimed"  # the pre-assignment claim record, migrated by the sweep
 CRITICAL = "critical"
 P0 = "P0"
@@ -422,6 +423,14 @@ def decide_command(issue: Issue, comment: Comment, now: datetime) -> list[tuple]
 
     if CLAIM_RE.match(line):
         investigation = bool(INVESTIGATION_CLAIM_RE.match(line))
+        if issue.closed:
+            return reject(who, "this issue is closed; reopen it first if work remains.")
+        if TRACKER in issue.labels and not investigation:
+            return reject(
+                who,
+                "this is a tracker: its work is in sub-issues. Claim one of those, or "
+                "file a sub-issue for your slice and claim that.",
+            )
         if mine:
             if investigation and INVESTIGATE not in issue.labels and READY not in issue.labels:
                 return [("label_add", INVESTIGATE), ("react", comment.id)]

@@ -33,6 +33,10 @@ def apply(gh, repo: str, number: int, actions: list[tuple], dry_run: bool = Fals
 def on_comment(gh, repo: str, event: dict, now: datetime, dry_run: bool = False) -> None:
     if "pull_request" in event["issue"]:
         return
+    # A caller may subscribe to more than `created`; an edit never re-runs a
+    # command (it would re-claim or re-refuse on every typo fix).
+    if event.get("action", "created") != "created":
+        return
     c = event["comment"]
     comment = Comment(
         c["user"]["login"],

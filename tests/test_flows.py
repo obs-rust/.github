@@ -251,6 +251,29 @@ class LostEvents(unittest.TestCase):
         self.assertEqual(self.w.assignees(self.r, n), [])
 
 
+class EditedComments(unittest.TestCase):
+    def test_an_edited_claim_is_not_rerun(self):  # #1876
+        from workflow import claim_bot
+
+        w = World()
+        self.addCleanup(w.shutdown)
+        r = "obs-rust/obs-studio"
+        n = w.open_issue(r, labels={"ready"})
+        event = {
+            "action": "edited",
+            "issue": {"number": n, "labels": [{"name": "ready"}]},
+            "comment": {
+                "id": 999,
+                "user": {"login": "bob"},
+                "author_association": "CONTRIBUTOR",
+                "body": "Claiming: it",
+                "created_at": w.now.isoformat(),
+            },
+        }
+        claim_bot.on_comment(w.gh, r, event, w.now)
+        self.assertEqual(w.assignees(r, n), [])
+
+
 class Cli(unittest.TestCase):
     """The production entry points also run in simulation mode."""
 

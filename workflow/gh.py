@@ -94,13 +94,14 @@ class GhBackend:
         assignees = [a["login"] for a in raw["assignees"]]
         deps = raw.get("issue_dependencies_summary") or {}
         return Issue(
-            number,
-            {lbl["name"] for lbl in raw["labels"]},
-            assignees,
-            comments,
-            prs,
-            {a: t for a, t in assigned_at.items() if a in assignees},
-            deps.get("blocked_by", 0),
+            number=number,
+            closed=raw["state"] == "closed",
+            labels={lbl["name"] for lbl in raw["labels"]},
+            assignees=assignees,
+            comments=comments,
+            prs=prs,
+            assigned_at={a: t for a, t in assigned_at.items() if a in assignees},
+            open_blockers=deps.get("blocked_by", 0),
         )
 
     def _pr(self, repo: str, number: int) -> LinkedPR:

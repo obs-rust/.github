@@ -45,6 +45,7 @@ class Issue:
     # When each current assignee was assigned.
     assigned_at: dict[str, datetime] = field(default_factory=dict)
     open_blockers: int = 0
+    closed: bool = False
 
 
 @dataclass
