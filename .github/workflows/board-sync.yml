@@ -46,6 +46,14 @@ jobs:
           client-id: ${{ vars.PROJECT_APP_CLIENT_ID }}
           private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
           owner: obs-rust
+      # The repo-keyed GraphQL cache (workflow/ghcache.py): each run reads
+      # only what changed since the last one. Cache keys are immutable, so
+      # each run saves a new one and restores the newest.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/gh-repo-cache
+          key: gh-repo-cache-${{ github.run_id }}
+          restore-keys: gh-repo-cache-
       - env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}

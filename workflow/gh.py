@@ -9,13 +9,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from workflow import ghcache, log
 from workflow.claims import BOT, CLAIMED, COMMANDS, REACTION, is_bot
 from workflow.model import Board, Comment, Field, Issue, Item, LinkedPR
 
-# Reads run wide; writes stay narrow, since bursts of project mutations
-# trip GitHub's secondary rate limit.
-READ_WORKERS = 12
-WRITE_WORKERS = 6
+# Few parallel calls: GitHub's secondary (burst) limit trips on concurrency
+# long before the hourly points run out, and writes trip it soonest.
+READ_WORKERS = 4
+WRITE_WORKERS = 3
 RED_DAYS = 7
 
 
@@ -31,7 +32,9 @@ def run(args: list[str]) -> str:
         if proc.returncode == 0:
             return proc.stdout
         print(f"gh failed (try {attempt + 1}): {proc.stderr.strip()}")
-        time.sleep(5 * 2**attempt)
+        # A rate limit clears in about a minute; other failures retry sooner.
+        limited = "rate limit" in proc.stderr.lower()
+        time.sleep((60 if limited else 5) * 2**attempt)
     raise RuntimeError(f"gh kept failing: {' '.join(args[:4])}")
 
 
@@ -239,22 +242,23 @@ class GhBackend:
                 return repos
             cursor = d["pageInfo"]["endCursor"]
 
-    def _paged(self, org: str, repo: str, connection: str, fields: str) -> list[dict]:
-        nodes, cursor = [], None
-        while True:
-            d = graphql(
+    def _paged(
+        self, org: str, repo: str, connection: str, fields: str, volatile: str = ""
+    ) -> list[dict]:
+        def fetch(args: str, cursor: str | None) -> dict:
+            return graphql(
                 f"""query($o: String!, $r: String!, $c: String) {{
                   repository(owner: $o, name: $r) {{
-                    {connection}(first: 50, after: $c) {{
+                    {connection}(first: 50, after: $c, {args}) {{
                       pageInfo {{ hasNextPage endCursor }} nodes {{ {fields} }} }} }} }}""",
                 o=org,
                 r=repo,
                 **({"c": cursor} if cursor else {}),
             )["repository"][connection]
-            nodes += d["nodes"]
-            if not d["pageInfo"]["hasNextPage"]:
-                return nodes
-            cursor = d["pageInfo"]["endCursor"]
+
+        nodes, fetched = ghcache.read(org, repo, connection, fields, fetch, volatile)
+        log(f"{repo} {connection}: {fetched} fetched, {len(nodes)} cached")
+        return nodes
 
     def _repo_items(self, org: str, repo: str) -> list[Item]:
         common = (
@@ -270,6 +274,7 @@ class GhBackend:
             issueDependenciesSummary { blockedBy } subIssuesSummary { total }
             closedByPullRequestsReferences(first: 10, includeClosedPrs: false) {
               nodes { isInMergeQueue } }""",
+            volatile="states: OPEN",
         )
         prs = self._paged(
             org,
@@ -279,6 +284,7 @@ class GhBackend:
             + """
             isDraft isInMergeQueue mergeStateStatus reviews(first: 1) { totalCount }
             commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }""",
+            volatile="states: OPEN",
         )
         out = []
         for n in issues:
