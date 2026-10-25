@@ -286,6 +286,10 @@ class SimBackend:
     def delete_lease(self, key: str) -> None:
         self.x("DELETE FROM leases WHERE key=?", key)
 
+    def check_counts(self, repo: str, number: int) -> tuple[int, int, int]:
+        (checks,) = self.q("SELECT checks FROM items WHERE id=?", self.node(repo, number))[0]
+        return {"SUCCESS": (1, 0, 0), "FAILURE": (0, 1, 0)}.get(checks, (0, 0, 1))
+
     def red_branches(self, org: str) -> list[str]:
         return [r for (r,) in self.q("SELECT repo FROM red")]
 

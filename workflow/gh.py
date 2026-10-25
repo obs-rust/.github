@@ -349,6 +349,30 @@ class GhBackend:
             **extra,
         )
 
+    def check_counts(self, repo: str, number: int) -> tuple[int, int, int]:
+        """(passed, failed, running) over the head commit's check runs and
+        commit statuses."""
+        full = repo if "/" in repo else f"obs-rust/{repo}"
+        sha = rest(f"repos/{full}/pulls/{number}", paginate=False)["head"]["sha"]
+        runs = rest(f"repos/{full}/commits/{sha}/check-runs?per_page=100", paginate=False)[
+            "check_runs"
+        ]
+        statuses = rest(f"repos/{full}/commits/{sha}/status", paginate=False)["statuses"]
+        passed = failed = pending = 0
+        for r in runs:
+            if r["status"] != "completed":
+                pending += 1
+            elif r["conclusion"] in ("success", "neutral", "skipped"):
+                passed += 1
+            else:
+                failed += 1
+        for st in statuses:
+            state = st["state"]
+            pending += state == "pending"
+            passed += state == "success"
+            failed += state in ("failure", "error")
+        return passed, failed, pending
+
     def red_branches(self, org: str) -> list[str]:
         """Repos whose latest finished push run on the default branch, in the
         last RED_DAYS, failed. Older failures are dormant copies of upstream
