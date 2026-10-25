@@ -44,7 +44,7 @@ coordinator holds, and orders them:
 
 | Kind | What it means | What you do |
 |---|---|---|
-| `fix-master` | a default branch's last push run failed | find the PR that broke it; fix or revert first. Queued PRs fail until it is green. Needs an admin (token, secret, rule)? One `human-review-needed` issue with the log line |
+| `fix-master` | a default branch's last push run failed (its PRs' `fix-ci` tasks are hidden until it is green) | find the PR that broke it; fix or revert first. Queued PRs fail until it is green. Needs an admin (token, secret, rule)? One `human-review-needed` issue with the log line |
 | `requeue` | a green PR now conflicts (ejected from the queue) | rebase, keep both sides of list conflicts, `--force-with-lease`, `gh pr merge --auto` |
 | `fix-ci` | a PR's checks fail | §3 |
 | `enqueue` | green and mergeable, not queued | `gh pr merge <N> -R <repo> --auto`, then confirm (gh pr view has no queue field): `gh api graphql -f query='{repository(owner:"obs-rust",name:"<repo>"){pullRequest(number:<N>){isInMergeQueue}}}'` |
@@ -75,7 +75,8 @@ uv run -m workflow.coordinator done <kind> <repo> <number> --owner "$COORDINATOR
 ```
 
 `take` creates a git ref atomically, so if another coordinator runs the same
-tick, exactly one of you gets each task and the other skips it. A lease
+tick, exactly one of you gets each task and the other skips it. Every kind
+takes a lease, `triage` included. A lease
 lapses after 2 hours if you die mid-task. Actions safe to repeat
 (`gh pr merge --auto`, labels, lease-protected pushes) need no lease, but
 take one anyway: it keeps the lists in step.

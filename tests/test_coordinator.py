@@ -337,6 +337,22 @@ class OrderAndReport(Case):
         self.w.master(R, red=False)
         self.assertNotIn("fix-master", self.kinds())
 
+    def test_red_master_hides_fix_ci_in_that_repo(self):
+        # Tick 5: #2313 and #2322 failed only because master was red.
+        n = self.w.open_pr(R, "alice")
+        self.w.ci(R, n, passed=False)
+        other = self.w.open_pr("obs-rust/obs-deps", "bob")
+        self.w.ci("obs-rust/obs-deps", other, passed=False)
+        self.w.master(R, red=True)
+
+        def at(repo, number):
+            return [t.kind for t in self.work() if (t.repo, t.number) == (repo, number)]
+
+        self.assertEqual(at(R, n), [])
+        self.assertEqual(at("obs-rust/obs-deps", other), ["fix-ci"])
+        self.w.master(R, red=False)
+        self.assertEqual(at(R, n), ["fix-ci"])
+
     def test_full_order(self):
         self.w.master(R, red=True)
         self.w.open_issue(R, labels={"human-review-needed"})
@@ -350,8 +366,8 @@ class OrderAndReport(Case):
         self.w.gh.x("UPDATE items SET merge_state='BEHIND' WHERE id=?", self.w.gh.node(R, reb))
         enq = self.w.open_pr(R, "gina")
         self.w.ci(R, enq, passed=True)
-        fix = self.w.open_pr(R, "hal")
-        self.w.ci(R, fix, passed=False)
+        fix = self.w.open_pr("obs-rust/obs-deps", "hal")  # R's master is red
+        self.w.ci("obs-rust/obs-deps", fix, passed=False)
         req = self.green_pr(author="ivy")
         self.w.enqueue(R, req)
         self.w.eject(R, req)

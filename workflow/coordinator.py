@@ -183,6 +183,8 @@ def tasks(
         if item.state != "OPEN":
             continue
         kind = pr_task(item, now) if item.kind == "pr" else issue_task(item, now)
+        if kind == "fix-ci" and item.repo in red:
+            continue  # it fails because master does; fix-master covers it
         if kind:
             out.append(task(kind, item, now))
     out = [t for t in out if lease.key(t.kind, t.repo, t.number) not in held]
