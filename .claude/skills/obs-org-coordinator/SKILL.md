@@ -101,7 +101,10 @@ PR ahead of it. Wait until that one lands (rebasing earlier drags its commits
 in), then rebase onto the new default branch. Never resolve by just dropping
 conflict markers: two blocks that share a closing line (`endif()`, `}`) lose
 one. After resolving, check `git diff <new base> <new head> --stat` lists
-only the PR's own files and line counts, then push with
+only the PR's own files and line counts. A PR still in the queue has a
+locked branch ("protected branch hook declined"): take it out first
+(`gh api graphql -f query='mutation{dequeuePullRequest(input:{id:"<PR node id>"}){clientMutationId}}'`),
+then push with
 `--force-with-lease=<branch>:<old sha>` and `gh pr merge --auto` again.
 
 ## 4. Reviewing
