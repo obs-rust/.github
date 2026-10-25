@@ -21,7 +21,8 @@ Agents without skills: `gh api repos/obs-rust/.github/contents/.claude/skills/ob
 ## Setup (once per session)
 
 Use the local checkout of obs-rust/.github (`~/dev/obs-rust/obs-studio2-extern/dotgithub`,
-or clone it there). `git pull` it each tick. Pick an id for this session:
+or clone it there). Each tick: `git switch master && git pull --prune`
+(a merged branch's remote is deleted, so a plain `git pull` on it fails). Pick an id for this session:
 
 ```sh
 export COORDINATOR_ID="coord-$(hostname)-$$"
