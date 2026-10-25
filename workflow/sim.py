@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS board_values (content TEXT, field TEXT, value TEXT,
 CREATE TABLE IF NOT EXISTS log (at TEXT, actor TEXT, what TEXT);
 CREATE TABLE IF NOT EXISTS red (repo TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS noqueue (repo TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS qstate (item TEXT PRIMARY KEY, state TEXT);
 CREATE TABLE IF NOT EXISTS leases (key TEXT PRIMARY KEY, owner TEXT, at TEXT);
 """
 
@@ -266,6 +267,9 @@ class SimBackend:
                     title,
                     self.q("SELECT count(*) FROM items WHERE parent=?", iid)[0][0],
                     not self.q("SELECT 1 FROM noqueue WHERE repo=?", repo),
+                    next(iter(self.q("SELECT state FROM qstate WHERE item=?", iid)), ("",))[0]
+                    if in_queue
+                    else "",
                 )
             )
         return out
@@ -466,6 +470,10 @@ class World:
 
     def enqueue(self, repo: str, pr: int) -> None:
         self.gh.x("UPDATE items SET in_queue=1 WHERE id=?", self.gh.node(repo, pr))
+
+    def queue_fails(self, repo: str, pr: int) -> None:
+        """Its merge group failed: GitHub marks the entry UNMERGEABLE."""
+        self.gh.x("INSERT OR REPLACE INTO qstate VALUES (?, 'UNMERGEABLE')", self.gh.node(repo, pr))
 
     def eject(self, repo: str, pr: int, conflict: bool = True) -> None:
         self.gh.x(

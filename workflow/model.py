@@ -74,6 +74,7 @@ class Item:
     title: str = ""
     sub_issues: int = 0  # a tracker issue has sub-issues
     merge_queue: bool = True  # the repo's default branch has a merge queue
+    queue_state: str = ""  # mergeQueueEntry.state while queued: UNMERGEABLE blocks those behind
 
 
 @dataclass
