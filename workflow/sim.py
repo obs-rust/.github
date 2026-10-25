@@ -206,6 +206,9 @@ class SimBackend:
             )
         self.log(BOT, f"{repo}#{number} {kind} {str(arg)[:60]}")
 
+    def repos(self, org: str) -> list[str]:
+        return [r for (r,) in self.q("SELECT DISTINCT repo FROM items ORDER BY repo")]
+
     # ---- board (same interface as GhBackend) --------------------------
 
     def items(self, org: str) -> list[Item]:

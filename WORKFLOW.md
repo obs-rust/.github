@@ -65,6 +65,12 @@ comment from the claimant and no commit, comment or review on their open PR
 that references the issue. The hourly sweep unassigns it. Refused commands
 get one reply that mentions only the person refused.
 
+Every coordinator tick also runs `uv run -m workflow.claim_bot sweep --org
+obs-rust`. It handles claims in repos that have no caller workflow, within
+one tick, and covers for scheduled runs that GitHub skips or delays: in one
+case obs-studio's hourly sweep went 4 hours without running. A repo with a
+caller sees only no-op replays.
+
 A repo turns claims on with this workflow (`.github/workflows/claim-bot.yaml`):
 
 ```yaml

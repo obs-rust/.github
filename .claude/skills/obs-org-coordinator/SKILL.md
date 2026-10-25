@@ -34,6 +34,13 @@ would not find the lease `take` made.
 
 ## 1. Get the list
 
+First, apply claims across the org. Most repos have no claim-bot workflow,
+and GitHub sometimes skips scheduled runs:
+
+```sh
+uv run -m workflow.claim_bot sweep --org obs-rust
+```
+
 ```sh
 uv run -m workflow.coordinator            # grouped, with instructions per kind
 uv run -m workflow.coordinator --json     # every task
