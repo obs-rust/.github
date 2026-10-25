@@ -302,6 +302,21 @@ class Cli(unittest.TestCase):
             self.assertIn("added 1", self.run_cli("workflow.board_sync", db=db))
             self.assertIn("triage", self.run_cli("workflow.coordinator", db=db) + "triage")
 
+    def test_org_sweep_handles_claims_in_repos_without_a_caller(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = str(Path(d) / "world.db")
+            w = World(db)
+            a = w.open_issue("obs-rust/obs-browser", labels={"ready"})
+            b = w.open_issue("obs-rust/obs-deps", labels={"ready"})
+            w.comment("obs-rust/obs-browser", a, "alice", "Claiming: it", deliver=False)
+            w.comment("obs-rust/obs-deps", b, "bob", "Claiming: it", deliver=False)
+            w.shutdown()
+            self.run_cli("workflow.claim_bot", "sweep", "--org", "obs-rust", db=db)
+            w = World(db)
+            self.addCleanup(w.shutdown)
+            self.assertEqual(w.assignees("obs-rust/obs-browser", a), ["alice"])
+            self.assertEqual(w.assignees("obs-rust/obs-deps", b), ["bob"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -238,6 +238,10 @@ class GhBackend:
                 i for chunk in pool.map(lambda r: self._repo_items(org, r), repos) for i in chunk
             ]
 
+    def repos(self, org: str) -> list[str]:
+        self.queued = set()
+        return [f"{org}/{r}" for r in self._repos(org)]
+
     def _repos(self, org: str) -> list[str]:
         repos, cursor = [], None
         while True:

@@ -4,6 +4,7 @@
     uv run -m workflow.claim_bot comment            # an issue_comment event
     uv run -m workflow.claim_bot sweep              # the hourly expiry sweep
     uv run -m workflow.claim_bot sweep --sim w.db   # against a simulated GitHub
+    uv run -m workflow.claim_bot sweep --org obs-rust  # every repo (coordinator tick)
 
 The repo comes from --repo or GITHUB_REPOSITORY, the comment event from
 GITHUB_EVENT_PATH. The comment body is only ever read from the event file.
@@ -88,6 +89,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["auto", "comment", "sweep"])
     ap.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
+    ap.add_argument("--org", help="sweep every repo of this org (repos with no caller)")
     ap.add_argument("--sim", help="SQLite world to run against instead of GitHub")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -98,6 +100,11 @@ def main() -> int:
     if args.mode == "comment":
         with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:
             on_comment(gh, args.repo, json.load(f), now, args.dry_run)
+    elif args.org:
+        # Repos without a claim-bot caller get claims handled here, on the
+        # coordinator's tick; repos with one see only no-op replays.
+        for repo in gh.repos(args.org):
+            sweep(gh, repo, now, args.dry_run)
     else:
         sweep(gh, args.repo, now, args.dry_run)
     return 0
