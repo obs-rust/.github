@@ -201,14 +201,15 @@ class Cli(unittest.TestCase):
 
     def run_cli(self, *args, db):
         env = dict(os.environ, PYTHONPATH=str(ROOT), GITHUB_REPOSITORY="obs-rust/obs-studio")
-        return subprocess.run(
+        proc = subprocess.run(
             [sys.executable, "-m", *args, "--sim", db],
             cwd=ROOT,
             env=env,
             capture_output=True,
             text=True,
             check=True,
-        ).stdout
+        )
+        return proc.stdout + proc.stderr
 
     def test_sweep_sync_and_coordinator_against_a_saved_world(self):
         with tempfile.TemporaryDirectory() as d:

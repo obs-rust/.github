@@ -21,6 +21,7 @@ LABELS = {
     "claim-locked": ("bfd4f2", "The claim bot leaves this issue alone"),
     "decision-needed": ("5319e7", "An open question for the maintainer"),
     "human-review-needed": ("b60205", "Escalated: waits on the human maintainer"),
+    "tracker": ("c2e0c6", "Tracks work in sub-issues or a checklist; not claimable itself"),
     "P0": ("b60205", "Red master or broken release: drop everything (8 h claims)"),
     "P1": ("d93f0b", "Next up"),
     "P2": ("fbca04", "Normal priority"),

@@ -21,6 +21,7 @@ Order, most urgent first:
   fix-ci         a ready PR's checks fail: rerun a flake, fix a mechanical
                  failure, or comment the cause for the author
   enqueue        a green, mergeable PR is not in the merge queue
+  merge          a green, reviewed PR in a repo with no merge queue
   rebase         a PR conflicts with or is behind its base
   review         a ready PR has no review
   decide         an open decision-needed question
@@ -41,10 +42,10 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from workflow import board, lease
+from workflow import board, claims, lease
 from workflow.model import Item
 
 ORDER = [
@@ -52,6 +53,7 @@ ORDER = [
     "requeue",
     "fix-ci",
     "enqueue",
+    "merge",
     "rebase",
     "review",
     "decide",
@@ -69,7 +71,10 @@ HOW = {
     "fix-ci": "Read the failed job log. Flake: `gh run rerun <run> --failed`. Lint, format, "
     "a count or a ledger line: push a `fixup:` commit. A real failure in the PR's "
     "logic: comment the cause and the log line for the author.",
-    "enqueue": "`gh pr merge <N> --auto`, then confirm it entered the merge queue.",
+    "enqueue": "`gh pr merge <N> -R obs-rust/<repo> --auto`, then confirm it is queued: "
+    "`gh pr view <N> -R obs-rust/<repo> --json isInMergeQueue`.",
+    "merge": "The repo has no merge queue: `gh pr merge <N> -R obs-rust/<repo> --squash` "
+    "once it is green and reviewed (an unreviewed one is listed under review).",
     "rebase": "`gh pr update-branch <N> --rebase`, or rebase by hand when it conflicts.",
     "review": "Review it: correctness, RED then GREEN, required test tiers, the features "
     "ledger and AGENTS.md. Post a PR review; push mechanical fixups yourself.",
@@ -98,6 +103,7 @@ class Task:
     number: int
     title: str
     age_hours: float
+    labels: list[str] = field(default_factory=list)
 
     @property
     def rank(self) -> tuple[int, float]:
@@ -106,7 +112,7 @@ class Task:
 
 def task(kind: str, item: Item, now: datetime, since: datetime | None = None) -> Task:
     age = (now - (since or item.created)).total_seconds() / 3600
-    return Task(kind, item.repo, item.number, item.title, round(age, 1))
+    return Task(kind, item.repo, item.number, item.title, round(age, 1), sorted(item.labels))
 
 
 def pr_task(item: Item, now: datetime) -> str | None:
@@ -124,7 +130,9 @@ def pr_task(item: Item, now: datetime) -> str | None:
     if item.merge_state == "BEHIND":
         return "rebase"
     if item.merge_state == "CLEAN" and item.checks == "SUCCESS":
-        return "enqueue"
+        if item.merge_queue:
+            return "enqueue"
+        return "merge" if item.reviews else "review"
     if not item.reviews:
         return "review"
     if now - item.updated >= timedelta(hours=STALLED_HOURS):
@@ -141,8 +149,15 @@ def issue_task(item: Item, now: datetime) -> str | None:
     if item.open_blockers or "claim-blocked" in labels or item.linked_prs_in_queue:
         return None
     if "needs-investigation" in labels:
-        return None if item.assignees else "investigating"
-    if item.assignees or item.sub_issues or "ready" in labels or {"P0", "critical"} & labels:
+        return None if item.assignees or claims.CLAIMED in labels else "investigating"
+    claimed = item.assignees or claims.CLAIMED in labels  # legacy label, pre-migration
+    if (
+        claimed
+        or item.sub_issues
+        or board.TRACKER in labels
+        or "ready" in labels
+        or {"P0", "critical"} & labels
+    ):
         return None
     return "triage" if now - item.created >= TRIAGE_GRACE else None
 
@@ -176,7 +191,8 @@ def report(work: list[Task], per_kind: int = 15) -> str:
         lines += ["", f"## {kind} ({len(mine)})", HOW[kind]]
         for t in mine[:per_kind]:
             ref = f"{t.repo}#{t.number}" if t.number else t.repo
-            lines.append(f"- {ref} ({t.age_hours:.0f} h) {t.title}")
+            tags = f" [{', '.join(t.labels)}]" if t.labels else ""
+            lines.append(f"- {ref} ({t.age_hours:.0f} h) {t.title}{tags}")
         if len(mine) > per_kind:
             lines.append(f"- ... {len(mine) - per_kind} more (--json lists all)")
     return "\n".join(lines).strip()

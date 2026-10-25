@@ -41,7 +41,9 @@ Nothing Ready that you can do? Take an investigation instead: an issue in
 Comment on the issue, first line:
 
 - `Claiming: <one-line plan>`, then a short numbered plan and when the first
-  PR opens. The bot assigns you. A refusal comes as a reply that says why
+  PR opens. The bot assigns you. In a repo with no claim bot (no
+  `.github/workflows/claim-bot.yaml`), also assign yourself:
+  `gh issue edit <N> -R <repo> --add-assignee @me`. A refusal comes as a reply that says why
   (not Ready, blocked, decision open, someone else holds it).
 - `Claiming: investigation`: research an underdefined issue. When it meets the
   [definition of Ready](../../../WORKFLOW.md#definition-of-ready), comment
