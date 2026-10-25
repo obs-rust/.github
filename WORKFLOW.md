@@ -48,7 +48,7 @@ A claim is the issue's assignee. Comment on the issue (first line):
 
 | Command | Who | Effect |
 |---|---|---|
-| `Claiming: <plan>` | anyone, on a Ready issue | assigns you |
+| `Claiming: <plan>` | anyone, on a Ready issue; a maintainer on any issue not under investigation | assigns you (a maintainer's claim also labels it `ready`) |
 | `Claiming: investigation` | anyone, on any issue | assigns you, labels `needs-investigation` |
 | `/ready` | the claimant or a maintainer | labels `ready` (the claim continues) |
 | `/investigate` | the claimant or a maintainer | back to `needs-investigation` |

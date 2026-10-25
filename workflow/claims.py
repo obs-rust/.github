@@ -289,8 +289,11 @@ def unblock(issue: Issue, actions: list[tuple]) -> list[tuple]:
     return actions + [("label_remove", BLOCKED)] if BLOCKED in issue.labels else actions
 
 
-def not_claimable(issue: Issue, investigation: bool) -> str | None:
-    """Why the issue cannot be claimed now, or None."""
+def not_claimable(issue: Issue, investigation: bool, trusted: bool = False) -> str | None:
+    """Why the issue cannot be claimed now, or None. A maintainer's claim
+    (`trusted`) is itself the triage: maintainers' agents file an issue with
+    its plan and claim it in the same minute, so only a decision, a blocker
+    or an explicit `needs-investigation` stops them."""
     if DECISION in issue.labels or HUMAN_REVIEW in issue.labels:
         return (
             "it waits on an open decision (`decision-needed`); "
@@ -302,6 +305,8 @@ def not_claimable(issue: Issue, investigation: bool) -> str | None:
             '(see "Blocked by" on the issue); claim it once they close.'
         )
     if investigation or is_p0(issue) or READY in issue.labels:
+        return None
+    if trusted and INVESTIGATE not in issue.labels:
         return None
     if INVESTIGATE in issue.labels:
         return (
@@ -428,9 +433,11 @@ def decide_command(issue: Issue, comment: Comment, now: datetime) -> list[tuple]
                 "else or offer help here; once the claim goes stale, comment "
                 f"`Taking over stale claim from @{claim.user}`.",
             )
-        if why := not_claimable(issue, investigation):
+        if why := not_claimable(issue, investigation, trusted=maintainer):
             return reject(who, f"this can't be claimed yet: {why}")
         acts = move(issue, claim, who, comment)
+        if not investigation and READY not in issue.labels and not is_p0(issue):
+            acts.insert(0, ("label_add", READY))  # a maintainer's claim triages it
         if investigation and READY not in issue.labels and INVESTIGATE not in issue.labels:
             acts.insert(0, ("label_add", INVESTIGATE))
         return acts
