@@ -32,11 +32,20 @@ Updated and Closed fields, so the sync writes none.
 
 from __future__ import annotations
 
+import re
+
 from datetime import datetime, timedelta
 
 from workflow.model import Board, Item
 
 TRACKER = "tracker"  # a tracker whose children are not issues yet
+# Titles that name a tracker: "meta: ...", "Phase 3 remaining ports ...".
+TRACKER_TITLE = re.compile(r"^\s*(meta|tracker)\b|^\s*phase \d", re.I)
+
+
+def is_tracker(item) -> bool:
+    return bool(item.sub_issues or TRACKER in item.labels or TRACKER_TITLE.match(item.title))
+
 
 STATUSES = [
     "Triage",
@@ -98,7 +107,7 @@ def status(item: Item, now: datetime) -> str:
             return "Investigating"
         if item.assignees:
             return "In progress"
-        if item.sub_issues or TRACKER in item.labels:
+        if is_tracker(item):
             return "Tracker"
         if "ready" in labels or {"P0", "critical"} & labels:
             return "Ready"

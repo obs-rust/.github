@@ -64,20 +64,24 @@ ORDER = [
 ]
 HOW = {
     "fix-master": "Read the failing run on the default branch, find the PR that broke it "
-    "and fix or revert it first. Queued PRs fail until it is green.",
+    "and fix or revert it first. Queued PRs fail until it is green. A failure only an "
+    "admin can fix (token, secret, branch rule): open or update one `human-review-needed` "
+    "issue in that repo with the log line, and report it.",
     "requeue": "The queue ejected it (or it conflicts): rebase on the default branch, "
     "keep both sides of list conflicts (docs/features.md), push with "
     "--force-with-lease, then `gh pr merge <N> --auto` again.",
-    "fix-ci": "Read the failed job log. Flake: `gh run rerun <run> --failed`. Lint, format, "
+    "fix-ci": "Run still in progress (logs locked)? Skip it this tick. Read the failed job log. Flake: `gh run rerun <run> --failed`. Lint, format, "
     "a count or a ledger line: push a `fixup:` commit. A real failure in the PR's "
     "logic: comment the cause and the log line for the author.",
     "enqueue": "`gh pr merge <N> -R obs-rust/<repo> --auto`, then confirm it is queued: "
-    "`gh pr view <N> -R obs-rust/<repo> --json isInMergeQueue`.",
+    '`gh api graphql -f query=\'{repository(owner:"obs-rust",name:"<repo>")'
+    "{pullRequest(number:<N>){isInMergeQueue}}}'`.",
     "merge": "The repo has no merge queue: `gh pr merge <N> -R obs-rust/<repo> --squash` "
     "once it is green and reviewed (an unreviewed one is listed under review).",
     "rebase": "`gh pr update-branch <N> --rebase`, or rebase by hand when it conflicts.",
     "review": "Review it: correctness, RED then GREEN, required test tiers, the features "
-    "ledger and AGENTS.md. Post a PR review; push mechanical fixups yourself.",
+    "ledger and AGENTS.md. Post a PR review; push mechanical fixups yourself. Then, if it "
+    "is green: queue it (`--auto`), or in a repo with no merge queue, merge it now.",
     "decide": "Research it in the rules, docs and earlier decisions. Settled, or a safe "
     "reversible default: comment `Decided: ...`. Otherwise relabel "
     "human-review-needed with the options and a recommendation.",
@@ -151,13 +155,7 @@ def issue_task(item: Item, now: datetime) -> str | None:
     if "needs-investigation" in labels:
         return None if item.assignees or claims.CLAIMED in labels else "investigating"
     claimed = item.assignees or claims.CLAIMED in labels  # legacy label, pre-migration
-    if (
-        claimed
-        or item.sub_issues
-        or board.TRACKER in labels
-        or "ready" in labels
-        or {"P0", "critical"} & labels
-    ):
+    if claimed or board.is_tracker(item) or "ready" in labels or {"P0", "critical"} & labels:
         return None
     return "triage" if now - item.created >= TRIAGE_GRACE else None
 

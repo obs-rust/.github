@@ -39,13 +39,13 @@ coordinator holds, and orders them:
 
 | Kind | What it means | What you do |
 |---|---|---|
-| `fix-master` | a default branch's last push run failed | find the PR that broke it; fix or revert first. Queued PRs fail until it is green |
+| `fix-master` | a default branch's last push run failed | find the PR that broke it; fix or revert first. Queued PRs fail until it is green. Needs an admin (token, secret, rule)? One `human-review-needed` issue with the log line |
 | `requeue` | a green PR now conflicts (ejected from the queue) | rebase, keep both sides of list conflicts, `--force-with-lease`, `gh pr merge --auto` |
 | `fix-ci` | a PR's checks fail | §3 |
-| `enqueue` | green and mergeable, not queued | `gh pr merge <N> -R <repo> --auto`, then confirm: `gh pr view <N> -R <repo> --json isInMergeQueue` |
+| `enqueue` | green and mergeable, not queued | `gh pr merge <N> -R <repo> --auto`, then confirm (gh pr view has no queue field): `gh api graphql -f query='{repository(owner:"obs-rust",name:"<repo>"){pullRequest(number:<N>){isInMergeQueue}}}'` |
 | `merge` | green and reviewed, in a repo with **no** merge queue | `gh pr merge <N> -R <repo> --squash` |
 | `rebase` | conflicts or is behind | `gh pr update-branch <N> --rebase`, or by hand |
-| `review` | no review yet | review it (§4) |
+| `review` | no review yet | review it (§4); then queue it, or merge it in a repo with no queue |
 | `decide` | `decision-needed` | §5 |
 | `triage` | not yet checked against the definition of Ready | §6 |
 | `stalled` | a PR silent for 72 h | ask the author; a handed-off PR or one silent 7 days: take over the mechanical part |
