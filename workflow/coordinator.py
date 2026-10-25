@@ -76,12 +76,14 @@ HOW = {
     "enqueue": "`gh pr merge <N> -R obs-rust/<repo> --auto`, then confirm it is queued: "
     '`gh api graphql -f query=\'{repository(owner:"obs-rust",name:"<repo>")'
     "{pullRequest(number:<N>){isInMergeQueue}}}'`.",
-    "merge": "The repo has no merge queue: `gh pr merge <N> -R obs-rust/<repo> --squash` "
+    "merge": "The repo has no merge queue. First `uv run -m workflow.coordinator checks <repo> "
+    "<N>` must exit 0 (every check finished, none failed); then "
+    "`gh pr merge <N> -R obs-rust/<repo> --squash` "
     "once it is green and reviewed (an unreviewed one is listed under review).",
     "rebase": "`gh pr update-branch <N> --rebase`, or rebase by hand when it conflicts.",
     "review": "Review it: correctness, RED then GREEN, required test tiers, the features "
-    "ledger and AGENTS.md. Post a PR review; push mechanical fixups yourself. Then, if it "
-    "is green: queue it (`--auto`), or in a repo with no merge queue, merge it now.",
+    "ledger and AGENTS.md. Post a PR review; push mechanical fixups yourself. Then, if `uv run -m "
+    "workflow.coordinator checks <repo> <N>` exits 0: queue it (`--auto`), or in a repo with no merge queue, merge it now.",
     "decide": "Research it in the rules, docs and earlier decisions. Settled, or a safe "
     "reversible default: comment `Decided: ...`. Otherwise relabel "
     "human-review-needed with the options and a recommendation.",
@@ -196,10 +198,19 @@ def report(work: list[Task], per_kind: int = 15) -> str:
     return "\n".join(lines).strip()
 
 
+def green(passed: int, failed: int, pending: int) -> bool:
+    """Merge or queue only when every check finished and none failed: a
+    rollup can read SUCCESS while jobs are still running (obs-deps#6 merged
+    with four FFmpeg builds in progress)."""
+    return passed > 0 and failed == 0 and pending == 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", nargs="?", default="list", choices=["list", "take", "done"])
-    ap.add_argument("task", nargs="*", help="KIND REPO NUMBER, for take and done")
+    ap.add_argument("action", nargs="?", default="list", choices=["list", "take", "done", "checks"])
+    ap.add_argument(
+        "task", nargs="*", help="KIND REPO NUMBER for take and done; REPO NUMBER for checks"
+    )
     ap.add_argument("--owner", default=os.environ.get("COORDINATOR_ID", "coordinator"))
     ap.add_argument("--org", default=os.environ.get("PROJECT_OWNER", "obs-rust"))
     ap.add_argument("--sim", help="SQLite world to run against instead of GitHub")
@@ -214,6 +225,11 @@ def main() -> int:
         from workflow.gh import GhBackend
 
         gh, now = GhBackend(), datetime.now(timezone.utc)
+    if args.action == "checks":
+        repo, number = args.task
+        passed, failed, pending = gh.check_counts(repo, int(number))
+        print(f"{repo}#{number}: {passed} passed, {failed} failed, {pending} running")
+        return 0 if green(passed, failed, pending) else 1
     if args.action != "list":
         kind, repo, number = args.task
         k = lease.key(kind, repo, int(number))

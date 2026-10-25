@@ -192,6 +192,40 @@ class FlowTestFindings(Case):
             self.assertEqual(json.loads(out.getvalue())[0]["kind"], "triage")
 
 
+class ChecksGate(Case):
+    """obs-deps#6 merged while four FFmpeg builds were still running."""
+
+    def test_green_needs_every_check_finished_and_none_failed(self):
+        self.assertTrue(coordinator.green(5, 0, 0))
+        self.assertFalse(coordinator.green(16, 0, 4))
+        self.assertFalse(coordinator.green(16, 1, 0))
+        self.assertFalse(coordinator.green(0, 0, 0))
+
+    def test_checks_command_exits_nonzero_while_running(self):
+        import contextlib
+        import io
+        import sys
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as d:
+            db = f"{d}/w.db"
+            w = World(db)
+            n = w.open_pr(R, "alice")
+            w.shutdown()
+            argv = ["c", "checks", "obs-studio", str(n), "--sim", db]
+            with mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(coordinator.main(), 1)
+            w = World(db)
+            w.ci(R, n, passed=True)
+            w.shutdown()
+            with mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(coordinator.main(), 0)
+
+    def test_merge_and_review_instructions_require_the_gate(self):
+        for kind in ("merge", "review"):
+            self.assertIn("workflow.coordinator checks", coordinator.HOW[kind])
+
+
 class IssueTasks(Case):
     def test_new_issue_is_triaged_after_an_hour(self):
         n = self.w.open_issue(R)

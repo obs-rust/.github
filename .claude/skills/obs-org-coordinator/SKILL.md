@@ -25,8 +25,12 @@ or clone it there). Each tick: `git switch master && git pull --prune`
 (a merged branch's remote is deleted, so a plain `git pull` on it fails). Pick an id for this session:
 
 ```sh
-export COORDINATOR_ID="coord-$(hostname)-$$"
+coord-<hostname>-<UTC start time, e.g. 20261025T0300>
 ```
+
+Write it down and pass that literal string as `--owner` on every `take` and
+`done`. Don't use `$$` or `$RANDOM`: each tool call is a new shell, so `done`
+would not find the lease `take` made.
 
 ## 1. Get the list
 
@@ -52,6 +56,12 @@ coordinator holds, and orders them:
 | `stalled` | a PR silent for 72 h | ask the author; a handed-off PR or one silent 7 days: take over the mechanical part |
 | `investigating` | `needs-investigation` with nobody on it | say what is missing, or research it and `/ready` it |
 | `escalated` | `human-review-needed` | report only |
+
+**Green means finished.** Before any merge or `--auto`, run
+`uv run -m workflow.coordinator checks <repo> <N>`. Exit 0 means every check
+completed and none failed. A rollup or `gh pr checks` can read green while
+jobs are still running: obs-deps#6 merged with four FFmpeg builds in
+progress.
 
 ## 2. Work it: lease, act, release
 
@@ -94,7 +104,9 @@ already be caught by the local gate, so this is the exception path:
    for the author. A large fix: run it as a subagent with the obs-worker
    skill and this PR as its task; don't block the tick on it.
 
-Never re-queue an ejected PR without reading why it was ejected.
+Never re-queue an ejected PR without reading why it was ejected. Use
+`git -C <checkout>` and absolute paths for every git step; a bare `cd` may be
+blocked.
 
 **Requeue conflicts.** A PR shown UNMERGEABLE in the queue conflicts with a
 PR ahead of it. Wait until that one lands (rebasing earlier drags its commits
