@@ -8,8 +8,10 @@ Each run:
 
   1. Lists every non-archived repo in the org (new repos join on their own;
      private ``*-ghsa-*`` advisory forks are skipped).
-  2. Adds each open issue and PR that the project lacks.
-  3. Sets Status on each open item from its live state, so the board is the
+  2. Pages through every issue and PR of each repo, open or closed, and
+     adds what the project lacks, so the board holds the org's whole history
+     for progress charts (views filter it: is:open, is:merged, is:issue...).
+  3. Sets Status on each item from its live state, so the board is the
      coordinator's master list:
 
        Needs decision  label decision-needed or human-review-needed
@@ -18,7 +20,7 @@ Each run:
        In review       any other open, non-draft PR
        In progress     draft PR, or an issue labeled claimed
        Triage          any other open issue
-  4. Sets Status to Done on items whose issue or PR has closed.
+       Done            closed issue, merged or closed PR
 
 Every mutation is idempotent; a run changes only what drifted.
 
@@ -87,29 +89,47 @@ def org_repos() -> list[str]:
         cursor = d["pageInfo"]["endCursor"]
 
 
-def open_items(repo: str) -> list[dict[str, Any]]:
-    """Open issues and PRs of one repo, with what Status needs."""
-    d = graphql(
-        """query($o: String!, $r: String!) { repository(owner: $o, name: $r) {
-          issues(states: OPEN, first: 100) { nodes {
-            id number labels(first: 20) { nodes { name } } } }
-          pullRequests(states: OPEN, first: 100) { nodes {
-            id number isDraft mergeStateStatus
-            labels(first: 20) { nodes { name } }
-            commits(last: 1) { nodes { commit {
-              statusCheckRollup { state } } } } } } } }""",
-        o=OWNER,
-        r=repo,
-    )["repository"]
-    items = []
-    for kind in ("issues", "pullRequests"):
-        for n in d[kind]["nodes"]:
-            n["status"] = status_of(n, is_pr=kind == "pullRequests")
-            items.append(n)
-    return items
+ISSUE_FIELDS = "id number state labels(first: 20) { nodes { name } }"
+PR_FIELDS = (
+    "id number state isDraft mergeStateStatus labels(first: 20) { nodes { name } } "
+    "commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }"
+)
+
+
+def paged(repo: str, connection: str, states: str, fields: str) -> list[dict[str, Any]]:
+    """Every node of one repo connection, 100 per page."""
+    nodes: list[dict[str, Any]] = []
+    cursor = None
+    while True:
+        d = graphql(
+            f"""query($o: String!, $r: String!, $c: String) {{
+              repository(owner: $o, name: $r) {{
+                {connection}(states: [{states}], first: 100, after: $c) {{
+                  pageInfo {{ hasNextPage endCursor }} nodes {{ {fields} }} }} }} }}""",
+            o=OWNER,
+            r=repo,
+            **({"c": cursor} if cursor else {}),
+        )["repository"][connection]
+        nodes += d["nodes"]
+        if not d["pageInfo"]["hasNextPage"]:
+            return nodes
+        cursor = d["pageInfo"]["endCursor"]
+
+
+def repo_items(repo: str) -> list[dict[str, Any]]:
+    """Every issue and PR of one repo, open or closed, with its Status."""
+    issues = paged(repo, "issues", "OPEN, CLOSED", ISSUE_FIELDS)
+    prs = paged(repo, "pullRequests", "OPEN, MERGED, CLOSED", PR_FIELDS)
+    for n in issues:
+        n["status"] = status_of(n, is_pr=False)
+    for n in prs:
+        n["status"] = status_of(n, is_pr=True)
+    return issues + prs
 
 
 def status_of(n: dict[str, Any], *, is_pr: bool) -> str:
+    if n["state"] != "OPEN":
+        return "Done"
     labels = {lbl["name"] for lbl in n["labels"]["nodes"]}
     if labels & DECISION_LABELS:
         return "Needs decision"
@@ -198,8 +218,7 @@ def main() -> int:
         sys.exit("PROJECT_NUMBER is required")
     pid, fid, options, existing = project()
     with ThreadPoolExecutor(READ_WORKERS) as pool:
-        per_repo = list(zip(repos := org_repos(), pool.map(open_items, repos)))
-    live = {n["id"] for _, items in per_repo for n in items}
+        per_repo = list(zip(repos := org_repos(), pool.map(repo_items, repos)))
 
     jobs: list[tuple[dict[str, Any] | None, dict[str, Any], str]] = []
     for repo, items in per_repo:
@@ -209,12 +228,6 @@ def main() -> int:
             if current != n["status"]:
                 print(f"{repo}#{n['number']}: {current or 'new'} -> {n['status']}")
                 jobs.append((item, n, n["status"]))
-    for content_id, item in existing.items():
-        closed = item["content"].get("state") in ("CLOSED", "MERGED")
-        status = (item.get("status") or {}).get("name")
-        if content_id not in live and closed and status != "Done":
-            print(f"{content_id}: {status or 'none'} -> Done")
-            jobs.append((item, {"id": content_id}, "Done"))
     if DRY_RUN:
         print(f"dry run: {len(jobs)} changes")
         return 0
