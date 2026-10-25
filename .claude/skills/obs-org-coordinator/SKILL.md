@@ -95,6 +95,14 @@ already be caught by the local gate, so this is the exception path:
 
 Never re-queue an ejected PR without reading why it was ejected.
 
+**Requeue conflicts.** A PR shown UNMERGEABLE in the queue conflicts with a
+PR ahead of it. Wait until that one lands (rebasing earlier drags its commits
+in), then rebase onto the new default branch. Never resolve by just dropping
+conflict markers: two blocks that share a closing line (`endif()`, `}`) lose
+one. After resolving, check `git diff <new base> <new head> --stat` lists
+only the PR's own files and line counts, then push with
+`--force-with-lease=<branch>:<old sha>` and `gh pr merge --auto` again.
+
 ## 4. Reviewing
 
 Correctness, RED then GREEN, the repo's required test tiers, the features
