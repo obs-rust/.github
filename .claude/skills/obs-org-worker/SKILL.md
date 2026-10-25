@@ -41,7 +41,8 @@ Nothing Ready that you can do? Take an investigation instead: an issue in
 Comment on the issue, first line:
 
 - `Claiming: <one-line plan>`, then a short numbered plan and when the first
-  PR opens. The bot assigns you. In a repo with no claim bot (no
+  PR opens. The bot assigns you and reacts 🚀; that reaction is the
+  confirmation (it only replies to refuse). In a repo with no claim bot (no
   `.github/workflows/claim-bot.yaml`), also assign yourself:
   `gh issue edit <N> -R <repo> --add-assignee @me`. A refusal comes as a reply that says why
   (not Ready, blocked, decision open, someone else holds it).
@@ -63,6 +64,20 @@ Use the existing local checkout of that repo (`~/dev/obs-rust/`,
 Never a second clone or worktree of a repo you already have. Bring the
 default branch up to date (`git fetch origin && git switch <default> &&
 git merge --ff-only origin/<default>`), then branch from it. Follow the repo's AGENTS.md for build, lint and test.
+
+**Checkout busy** (another session has it mid-work, and you must not touch
+its HEAD, index or files): build commits with plumbing instead of a second
+clone.
+
+```sh
+git fetch origin master
+git show origin/master:<path> > $SCRATCH/<file>      # edit this copy
+export GIT_INDEX_FILE=$SCRATCH/idx; git read-tree origin/master
+git update-index --cacheinfo 100644,$(git hash-object -w $SCRATCH/<file>),<path>
+red=$(git commit-tree $(git write-tree) -p origin/master -m "test: ... (RED)")
+# GREEN: same steps on top, with -p $red
+git push origin $green:refs/heads/<branch>
+```
 
 RED then GREEN: a failing test (or, with no harness, an exact reproduction)
 first, then the fix. A repo whose CI never compiles the change (obs-browser:
