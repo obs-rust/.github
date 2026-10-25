@@ -15,6 +15,7 @@ Each run:
      coordinator's master list:
 
        Needs decision  label decision-needed or human-review-needed
+       In merge queue  PR waiting in the merge queue
        Ready to merge  PR, not a draft, mergeStateStatus CLEAN
        Needs fix       PR whose checks fail, or that conflicts (DIRTY)
        In review       any other open, non-draft PR
@@ -48,6 +49,7 @@ STATUSES = [
     "Needs fix",
     "In review",
     "Ready to merge",
+    "In merge queue",
     "Done",
 ]
 # Reads run wide; writes stay narrow, since bursts of project mutations
@@ -91,7 +93,7 @@ def org_repos() -> list[str]:
 
 ISSUE_FIELDS = "id number state labels(first: 20) { nodes { name } }"
 PR_FIELDS = (
-    "id number state isDraft mergeStateStatus labels(first: 20) { nodes { name } } "
+    "id number state isDraft isInMergeQueue mergeStateStatus labels(first: 20) { nodes { name } } "
     "commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }"
 )
 
@@ -135,6 +137,8 @@ def status_of(n: dict[str, Any], *, is_pr: bool) -> str:
         return "Needs decision"
     if not is_pr:
         return "In progress" if "claimed" in labels else "Triage"
+    if n["isInMergeQueue"]:
+        return "In merge queue"
     if n["isDraft"]:
         return "In progress"
     commits = n["commits"]["nodes"]
