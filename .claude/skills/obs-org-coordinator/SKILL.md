@@ -119,6 +119,9 @@ taste: relabel `human-review-needed` with the options and a recommendation.
 
 Check the issue against the [definition of Ready](../../../WORKFLOW.md#definition-of-ready):
 
+- **Acceptance criteria must be testable in that repo:** before you ask for
+  a RED test, check the repo has a harness that can run it; if not, ask for
+  an exact reproduction or a review-checkable criterion instead.
 - **Meets it:** comment `/ready` with why, then set the labels yourself in
   one call: `gh issue edit <N> -R <repo> --add-label ready,P2,size:S`. Repos
   without the claim bot never answer `/ready`, and the label is what takes

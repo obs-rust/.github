@@ -60,22 +60,31 @@ and someone else may take it. Waiting on something outside your control:
 
 Use the existing local checkout of that repo (`~/dev/obs-rust/`,
 `~/dev/obs-rust/obs-studio2-extern/`); clone there only if none exists.
-Never a second clone or worktree of a repo you already have. Branch from the
-default branch. Follow the repo's AGENTS.md for build, lint and test.
+Never a second clone or worktree of a repo you already have. Bring the
+default branch up to date (`git fetch origin && git switch <default> &&
+git merge --ff-only origin/<default>`), then branch from it. Follow the repo's AGENTS.md for build, lint and test.
 
 RED then GREEN: a failing test (or, with no harness, an exact reproduction)
-first, then the fix. Open the PR as a draft as soon as RED exists, with
+first, then the fix. A repo whose CI never compiles the change (obs-browser:
+clang-format only) gets a line in the PR saying what was and wasn't built. Open the PR as a draft as soon as RED exists, with
 `Fixes #<N>` so the board links it.
 
 ## 5. Land it, then move on
 
-Get it green and mergeable, then `gh pr merge <N> --auto` (repos with a
-merge queue). Once it is **in the queue, you are done**: comment
-`Handed off to the coordinator` on the PR and go to §2 for the next issue.
-Ejections, rebases and CI repairs after that are the coordinator's.
+Does the repo have a merge queue?
 
-In a repo without a merge queue, ask for review once CI is green; the
-coordinator merges it.
+```sh
+gh api graphql -f query='{repository(owner:"obs-rust",name:"<repo>"){mergeQueue{id}}}' -q .data.repository.mergeQueue
+```
+
+- **Queue** (non-null): get it green and mergeable, `gh pr merge <N> --auto`,
+  and once it is **in the queue you are done**.
+- **No queue** (null): once CI is green and it is out of draft, you are done.
+  The coordinator's list picks it up for review, then merges it.
+
+Either way, comment `Handed off to the coordinator` on the PR and go to §2.
+No reviewer to request. Ejections, rebases, review fixes and CI repairs
+after that are the coordinator's.
 
 ## Rules that hold everywhere
 

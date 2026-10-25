@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 from workflow import coordinator
@@ -194,6 +195,60 @@ class Board(Flow):
         w.label(R, n, "P1", remove=True)
         w.sync()
         self.assertIsNone(w.status(R, n, "Priority"))
+
+
+class LostEvents(unittest.TestCase):
+    """obs-studio, 2026-10-25 01:28-01:33: five comment runs failed while the
+    reusable workflow was missing, so those claims were never handled."""
+
+    def setUp(self):
+        self.w = World()
+        self.addCleanup(self.w.shutdown)
+        self.r = "obs-rust/obs-studio"
+
+    def test_sweep_replays_a_lost_claim(self):
+        n = self.w.open_issue(self.r, labels={"ready"})
+        self.w.comment(self.r, n, "alice", "Claiming: it", deliver=False)
+        self.assertEqual(self.w.assignees(self.r, n), [])
+        self.w.advance(hours=1)  # the hourly sweep
+        self.assertEqual(self.w.assignees(self.r, n), ["alice"])
+
+    def test_replay_is_idempotent(self):
+        n = self.w.open_issue(self.r, labels={"ready"})
+        self.w.comment(self.r, n, "alice", "Claiming: it", deliver=False)
+        self.w.advance(hours=1)
+        self.w.advance(hours=1)
+        self.assertEqual(self.w.assignees(self.r, n), ["alice"])
+        self.assertEqual(self.w.bot_comments(self.r, n), [])
+
+    def test_lost_refusal_is_answered_once(self):
+        n = self.w.open_issue(self.r, labels={"ready"})
+        self.w.comment(self.r, n, "alice", "Claiming: it")
+        self.w.comment(self.r, n, "bob", "Claiming: me too", deliver=False)
+        self.w.advance(hours=1)
+        self.w.advance(hours=1)
+        self.assertEqual(len(self.w.bot_comments(self.r, n)), 1)
+        self.assertEqual(self.w.assignees(self.r, n), ["alice"])
+
+    def test_handled_commands_are_not_replayed(self):
+        n = self.w.open_issue(self.r, labels={"ready"})
+        self.w.comment(self.r, n, "alice", "Claiming: it")
+        self.w.comment(self.r, n, "alice", "Releasing it")
+        self.w.advance(hours=1)
+        self.assertEqual(self.w.assignees(self.r, n), [])
+
+    def test_lost_maintainer_ready_is_replayed(self):
+        n = self.w.open_issue(self.r)
+        self.w.comment(self.r, n, "zackees", "/ready", "OWNER", deliver=False)
+        self.w.advance(hours=1)
+        self.assertIn("ready", self.w.labels(self.r, n))
+
+    def test_old_commands_are_left_alone(self):
+        n = self.w.open_issue(self.r, labels={"ready"})
+        self.w.comment(self.r, n, "alice", "Claiming: it", deliver=False)
+        self.w.gh.x("UPDATE comments SET created=?", (self.w.now - timedelta(hours=5)).isoformat())
+        self.w.advance(hours=1)
+        self.assertEqual(self.w.assignees(self.r, n), [])
 
 
 class Cli(unittest.TestCase):

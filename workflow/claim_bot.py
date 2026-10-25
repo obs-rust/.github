@@ -54,6 +54,20 @@ def on_comment(gh, repo: str, event: dict, now: datetime, dry_run: bool = False)
 def sweep(gh, repo: str, now: datetime, dry_run: bool = False) -> None:
     for number in gh.claimed_issues(repo):
         apply(gh, repo, number, claims.decide_sweep(gh.issue(repo, number), now), dry_run)
+    catch_up(gh, repo, now, dry_run)
+
+
+def catch_up(gh, repo: str, now: datetime, dry_run: bool = False) -> None:
+    """Replay commands whose comment event never reached the bot."""
+    for number in gh.issues_commented_since(repo, now - claims.CATCH_UP):
+        issue = gh.issue(repo, number)
+        for c in claims.missed(issue, now):
+            issue = gh.issue(repo, number)  # the state the previous replay left
+            before = [x for x in issue.comments if x.created < c.created or x.id < c.id]
+            issue.comments = [x for x in before if x.id != c.id]
+            acts = claims.effective(issue, claims.decide_comment(issue, c, now))
+            log(f"{repo}#{number}: replaying comment {c.id} by {c.author}")
+            apply(gh, repo, number, acts, dry_run)
 
 
 def backend(sim: str | None):

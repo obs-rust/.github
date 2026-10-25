@@ -130,6 +130,14 @@ class GhBackend:
                     found.add(i["number"])
         return sorted(found)
 
+    def issues_commented_since(self, repo: str, since: datetime) -> list[int]:
+        stamp = since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return sorted(
+            i["number"]
+            for i in rest(f"repos/{repo}/issues?state=open&since={stamp}&per_page=100")
+            if "pull_request" not in i and i["comments"]
+        )
+
     def apply_issue(self, repo: str, number: int, action: tuple) -> None:
         kind, arg = action
         base = ["gh", "issue", "edit", str(number), "--repo", repo]
