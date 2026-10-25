@@ -153,6 +153,19 @@ class FlowTestFindings(Case):
         self.w.sync()
         self.assertEqual(self.w.status(R, n), "Tracker")
 
+    def test_tracker_titles_leave_triage(self):
+        for title in ("meta: Phase 6 core", "Phase 3 remaining ports: utf8", "Tracker: CI"):
+            n = self.w.open_issue(R)
+            self.w.gh.x("UPDATE items SET title=? WHERE id=?", title, self.w.gh.node(R, n))
+            self.w.advance(hours=2)
+            self.assertEqual(self.kinds(n), [], title)
+        n = self.w.open_issue(R)
+        self.w.gh.x(
+            "UPDATE items SET title='metadata loss in mp4' WHERE id=?", self.w.gh.node(R, n)
+        )
+        self.w.advance(hours=2)
+        self.assertEqual(self.kinds(n), ["triage"])
+
     def test_report_shows_labels(self):
         n = self.w.open_issue(R, labels={"docs"})
         self.w.advance(hours=2)
