@@ -1,167 +1,152 @@
 ---
 name: obs-org-coordinator
-description: Org-wide coordinator playbook for the obs-rust GitHub organization. Use when you run on a timer (/loop) as coordinator, concierge or steward, so that every obs-rust repository, not only obs-studio, has its ready PRs merged, its questions answered, its decisions made and its stalled follow-ups closed. You never claim or port an issue; that is the worker role.
+description: Coordinator playbook for the whole obs-rust GitHub organization. Use when you run on a timer (/loop) as coordinator, concierge or steward. Each tick you run the work-list command, clear every task it lists across all repos (queue, rebase, fix CI, review, decide, triage, unstick), take a lease before each task so parallel coordinators never collide, and report. You never claim or port an issue; that is the worker role.
 ---
 
-# obs-org-coordinator: keeping every obs-rust repo moving
+# obs-org-coordinator: clear the work list, every tick
 
-The `obs-coordinator` skill in obs-rust/obs-studio covers that one repo in
-depth. The rest of the org (obs-deps, obs-browser, obs-websocket,
-obs-studio-libs, cef, …) used to have no coordinator: on 2026-10-24 three
-green obs-deps PRs had waited eight days and new issues in obs-browser and
-obs-studio-libs had no answer. This skill is the sweep that catches them.
+You keep work moving in every obs-rust repo while the maintainer is away.
+Workers stop when their PR enters the merge queue. Everything after that
+(ejections, rebases, CI repairs), plus triage, reviews and decisions, is
+yours. If you skip something, it piles up unseen, so the list below is
+computed, not remembered.
 
 The [constitution](https://github.com/obs-rust/constitution/blob/main/CONSTITUTION.md)
-overrides this file. A repo's own `AGENTS.md`, `CONTRIBUTING.md` or
-`.claude/skills/*coordinator*` overrides the defaults below for that repo.
+overrides this file; a repo's `AGENTS.md` adds its own rules (obs-studio's
+`obs-coordinator` skill has its merge-queue and security details).
+How work moves: [WORKFLOW.md](../../../WORKFLOW.md).
 
-Codex and other agents without skills: read this file by hand
-(`gh api repos/obs-rust/.github/contents/.claude/skills/obs-org-coordinator/SKILL.md -H 'Accept: application/vnd.github.raw'`).
+Agents without skills: `gh api repos/obs-rust/.github/contents/.claude/skills/obs-org-coordinator/SKILL.md -H 'Accept: application/vnd.github.raw'`.
 
-## 0. Each tick: find the repos with work
+## Setup (once per session)
 
-Start from the **obs-rust Multiview** org project (https://github.com/orgs/obs-rust/projects/1), the master list of every
-open issue and PR in the org. `org-tracker-sync` in this repo refreshes it
-every 30 minutes and sets Status from live state: `In merge queue`, `Ready to merge`,
-`Needs fix`, `Needs decision`, `In review`, `In progress`, `Triage`, `Done`.
-Work the columns in that order:
+Use the local checkout of obs-rust/.github (`~/dev/obs-rust/obs-studio2-extern/dotgithub`,
+or clone it there). `git pull` it each tick. Pick an id for this session:
 
 ```sh
-gh project item-list 1 --owner obs-rust --limit 500 --format json \
-  -q '.items[]|select(.status!="Done")|"\(.status)\t\(.content.repository)#\(.content.number)\t\(.title)"' | sort
+export COORDINATOR_ID="coord-$(hostname)-$$"
 ```
 
-(Your token needs the `project` scope.) The board
-old, so check an item's live state before you act on it. If the board is
-missing or the sync is failing, use the direct sweep below, and report the
-broken sync.
-
-Don't hard-code the repo list; repos get added. Every tick:
+## 1. Get the list
 
 ```sh
-gh repo list obs-rust --limit 200 --no-archived --json name -q '.[].name' |
-while read r; do
-  p=$(gh pr list -R obs-rust/$r --json number -q length 2>/dev/null)
-  i=$(gh issue list -R obs-rust/$r --json number -q length 2>/dev/null)
-  [ "${p:-0}${i:-0}" != 00 ] && echo "$r prs=${p:-0} issues=${i:-0}"
-done
-gh search issues --owner obs-rust --state open --sort updated --limit 50 \
-  --json repository,number,title,updatedAt,isPullRequest   # recent activity
+uv run -m workflow.coordinator            # grouped, with instructions per kind
+uv run -m workflow.coordinator --json     # every task
 ```
 
-Skip the `obs-studio-ghsa-*` repos: they are private advisory forks and go
-through §5. Then work through each repo with work, oldest item first.
+It reads every repo live (not the board), leaves out tasks another
+coordinator holds, and orders them:
 
-**obs-rust/obs-studio:** run the full `obs-coordinator` skill from that
-repo (`.claude/skills/obs-coordinator/SKILL.md`). Everything below is for
-the other repos.
+| Kind | What it means | What you do |
+|---|---|---|
+| `fix-master` | a default branch's last push run failed | find the PR that broke it; fix or revert first. Queued PRs fail until it is green |
+| `requeue` | a green PR now conflicts (ejected from the queue) | rebase, keep both sides of list conflicts, `--force-with-lease`, `gh pr merge --auto` |
+| `fix-ci` | a PR's checks fail | §3 |
+| `enqueue` | green and mergeable, not queued | `gh pr merge <N> -R <repo> --auto`, then confirm it is in the queue |
+| `rebase` | conflicts or is behind | `gh pr update-branch <N> --rebase`, or by hand |
+| `review` | no review yet | review it (§4) |
+| `decide` | `decision-needed` | §5 |
+| `triage` | not yet checked against the definition of Ready | §6 |
+| `stalled` | a PR silent for 72 h | ask the author; a handed-off PR or one silent 7 days: take over the mechanical part |
+| `investigating` | `needs-investigation` with nobody on it | say what is missing, or research it and `/ready` it |
+| `escalated` | `human-review-needed` | report only |
 
-## 1. Learn the repo's rules first
+## 2. Work it: lease, act, release
 
-Before you act in a repo, read its `AGENTS.md`/`CLAUDE.md`,
-`CONTRIBUTING.md` and branch rules:
+For each task, top to bottom:
 
 ```sh
-gh api repos/obs-rust/<r>/rulesets
-gh api graphql -f query='{repository(owner:"obs-rust",name:"<r>"){defaultBranchRef{name} mergeQueue{url}}}'
+uv run -m workflow.coordinator take <kind> <repo> <number> --owner "$COORDINATOR_ID" || continue
+# ... do the task ...
+uv run -m workflow.coordinator done <kind> <repo> <number> --owner "$COORDINATOR_ID"
 ```
 
-Remember the cross-repo directive in obs-studio's AGENTS.md:
-obs-rust/obs-websocket and `plugins/obs-websocket` are kept as a
-compatibility check. Don't change them to suit Rust OBS. Fix the Rust side.
-Fixes to the plugin's own bugs (security, crashes) are fine.
+`take` creates a git ref atomically, so if another coordinator runs the same
+tick, exactly one of you gets each task and the other skips it. A lease
+lapses after 2 hours if you die mid-task. Actions safe to repeat
+(`gh pr merge --auto`, labels, lease-protected pushes) need no lease, but
+take one anyway: it keeps the lists in step.
 
-## 2. Merge ready PRs
+Before a push to someone's branch, check their latest commit: if they pushed
+after the failure, read it instead of racing them. Push to a fork only when
+maintainer edits are allowed, always with
+`--force-with-lease=<branch>:<old sha>`. Never merge around a merge queue,
+never with failing checks, never with `--admin`.
 
-Ready means open, not a draft, every check green, `mergeStateStatus` `CLEAN`,
-and no unresolved change request.
+A repo without a merge queue: merge a green, reviewed PR with the repo's
+usual strategy. A PR with no CI at all: review it and report it; don't merge.
 
-- **Repo has a merge queue:** `gh pr merge <N> -R obs-rust/<r> --auto` and
-  confirm it entered the queue, as in obs-coordinator §1.
-- **No merge queue, but CI ran on the PR and passed:** review it first (§3).
-  If the review finds nothing blocking, merge it with the repo's usual
-  strategy (look at recent merges: `gh pr list -R obs-rust/<r> --state merged
-  --limit 5 --json mergeCommit,title`), for example
-  `gh pr merge <N> -R obs-rust/<r> --squash`.
-- **No CI ran on the PR** (none configured, or none triggers on PRs): don't
-  merge. Review it and list it in the report for the maintainer.
-- **Upstream syncs:** some repos copy obsproject repos. A PR that brings
-  in an upstream change gets the same review, and one that conflicts with
-  an obs-rust change waits for the maintainer.
+## 3. Fixing CI (`fix-ci`, `fix-master`, ejections)
 
-Never merge with failing checks or with `--admin`.
+You are the CI fixer; there is no separate agent. Most crashes should
+already be caught by the local gate, so this is the exception path:
 
-## 3. Review and unstick
+1. Read the failed job log (`gh run view <run> --log-failed`).
+2. **Flake** (timeout, runner died, network, a timing test the diff doesn't
+   touch that passed in the sibling job): `gh run rerun <run> --failed`.
+3. **Mechanical** (lint, format, a test count, a features-ledger line, a
+   stale reference): push a `fixup:` commit and say so in a comment.
+4. **Master was red**: fix master first (`fix-master`); re-queuing only
+   ejects the PR again.
+5. **A real failure in the PR's logic**: comment the cause and the log line
+   for the author. A large fix: run it as a subagent with the obs-worker
+   skill and this PR as its task; don't block the tick on it.
 
-Treat each PR as obs-coordinator §2 and §2a do: read failing logs before
-re-running (`gh run rerun <run> --failed` only for flakes), rebase `DIRTY`
-or stale PRs with `gh pr update-branch <N> -R obs-rust/<r> --rebase` when the
-conflict is mechanical, push only mechanical `fixup:` commits, and comment
-the cause for the author when the failure is in their logic. Review every
-unreviewed contributor PR and post the findings as a PR review. A
-draft with no activity for 7 days gets a comment asking if it is still
-being worked on.
+Never re-queue an ejected PR without reading why it was ejected.
 
-## 4. Answer questions, decide, close
+## 4. Reviewing
 
-For each open issue and recent comment by someone other than the maintainer
-or a bot:
+Correctness, RED then GREEN, the repo's required test tiers, the features
+ledger, the repo's AGENTS.md. Post the findings as a PR review. Fix small
+mechanical issues yourself as a fixup commit; leave design to the author.
 
-- **Questions:** answer when the code or docs settle it.
-- **Decisions:** follow obs-coordinator §3b for every repo. Decide with a
-  `Decided:` comment when a rule, prior decision or safe reversible default
-  settles it; otherwise label `human-review-needed` (create the label if
-  the repo lacks it: `gh label create human-review-needed -R obs-rust/<r>`)
-  and give the options and a recommendation.
-- **New issues with no reply:** triage them in the tick you find them.
-  Confirm or ask for a reproduction, label them, and say where the fix goes.
-  Many of these repos have no workers. Say so when the issue needs
-  one, and list it in the report.
-- **Stalled follow-ups:** follow obs-coordinator §4. Close what was
-  concluded, and do the agreed next step that nobody took.
-- **Cross-repo work:** an issue that really belongs in another obs-rust
-  repo gets a comment linking the right one. Transfer it
-  (`gh issue transfer`) only when both repos are ours and nobody has
-  replied yet.
+## 5. Deciding
 
-## 5. Security advisories
+Research the question in the rules, docs, code and earlier decisions.
+Decide it when they settle it, or when one option is a safe, reversible
+default: a comment whose first line starts `Decided:`, then the reasons and
+sources. Escalate only policy, governance, money, legal, security
+trade-offs, outside parties, irreversible steps or the maintainer's
+taste: relabel `human-review-needed` with the options and a recommendation.
 
-List advisories in triage for every repo, not only obs-studio:
+## 6. Triage
 
-```sh
-gh repo list obs-rust --limit 200 --no-archived --json name -q '.[].name' |
-while read r; do
-  gh api "repos/obs-rust/$r/security-advisories?state=triage" \
-    -q ".[]|\"$r \(.ghsa_id) \(.summary)\"" 2>/dev/null
-done
-```
+Check the issue against the [definition of Ready](../../../WORKFLOW.md#definition-of-ready):
 
-Triage each one as obs-coordinator §3a says, with obs-studio's
-[SECURITY.md](https://github.com/obs-rust/obs-studio/blob/master/SECURITY.md)
-tiers unless the repo has its own SECURITY.md. Never discuss an advisory
-in a public issue or PR.
+- **Meets it:** comment `/ready`, add `P0`..`P3` and `size:S`..`size:XL`.
+  Split an XL into sub-issues.
+- **Underdefined:** comment what is missing and `/investigate`.
+- **Not a task** (an idea, a question): move it to Discussions and close it.
+- **Already fixed or a duplicate:** close it with the link.
+- **A tracker:** add its children as sub-issues; it leaves triage.
 
-## 6. Report
+A large backlog: do the oldest 15 each tick. The list shows the count.
 
-End each tick with one section per repo that had work: what you merged,
-rebased, re-ran, reviewed, answered, decided and closed, and what needs the
-maintainer. Also list every open `human-review-needed` item in the org with
-its age:
+## 7. Outside the list
 
-```sh
-gh search issues --owner obs-rust --state open --label human-review-needed \
-  --json repository,number,title,createdAt
-```
+Every tick, also check what the list can't see:
+- **Security advisories** in triage, in every repo
+  (`gh api "repos/obs-rust/<r>/security-advisories?state=triage"`); triage
+  them as obs-studio's `obs-coordinator` §3a says. Never discuss one in public.
+- **New comments with questions** from people other than the maintainer:
+  answer when the code or docs settle it.
 
-Say "quiet" only when the sweep in §0 found nothing to do. A PR or issue
-in a side repo that shows up in report after report with nobody acting on
-it is a coordinator failure, the same as in obs-studio.
+## 8. Report
+
+End each tick with: what you did (queued, rebased, fixed, reviewed, decided,
+triaged), the `escalated` items with their ages, and anything you could not
+finish and why. Say "quiet" only when `uv run -m workflow.coordinator`
+prints `quiet: nothing to do` and §7 is empty.
+
+When the list shows a kind growing tick after tick, the process has a gap:
+fix the cause (a rule in `workflow/`, a skill, a doc) with a test in
+`tests/`, not just the instances.
 
 ## Never
 
 - Claim, port or take over an issue (that is `obs-org-worker`).
-- Merge outside a merge queue that exists, with failing checks, with no CI,
-  or with `--admin`.
-- Modify `constitution` (locked to the maintainer) or the obs-websocket
-  plugin to suit Rust OBS.
-- Open new issues for problems you notice; report them instead.
+- Act on a task whose lease you didn't get.
+- Merge outside a merge queue, with failing checks, or with `--admin`.
+- Edit `constitution`, or change the obs-websocket plugin to suit Rust OBS.
+- Open new issues for problems you notice; report them. Filing an agreed
+  follow-up is fine.

@@ -1,0 +1,52 @@
+name: board-sync
+
+# Keeps the obs-rust Multiview project (org project 1) in step with every
+# repo, and tests the workflow package on PRs. All logic is in workflow/
+# (board_sync.py); this file only schedules it.
+#
+# Auth: the obs-rust Multiview GitHub App (ID 5460858): Projects read/write,
+# Issues, Pull requests and Metadata read, installed on all repos.
+#   vars.PROJECT_APP_CLIENT_ID, vars.PROJECT_NUMBER, secrets.PROJECT_APP_PRIVATE_KEY
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: board-sync-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run -m unittest discover -s tests -t .
+
+  sync:
+    needs: test
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.PROJECT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
+          owner: obs-rust
+      - env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+        run: uv run -m workflow.board_sync
