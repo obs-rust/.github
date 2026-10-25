@@ -67,7 +67,9 @@ HOW = {
     "and fix or revert it first. Queued PRs fail until it is green. A failure only an "
     "admin can fix (token, secret, branch rule): open or update one `human-review-needed` "
     "issue in that repo with the log line, and report it.",
-    "requeue": "The queue ejected it (or it conflicts): rebase on the default branch, "
+    "requeue": "UNMERGEABLE in the queue: read its merge-group run; a semantic clash "
+    "with master (a new lint, a renamed helper) needs a fixup: dequeue, push, `--auto`. "
+    "The queue ejected it (or it conflicts): rebase on the default branch, "
     "keep both sides of list conflicts (docs/features.md), push with "
     "--force-with-lease, then `gh pr merge <N> --auto` again.",
     "fix-ci": "Run still in progress (logs locked)? Skip it this tick. Read the failed job log. Flake: `gh run rerun <run> --failed`. Lint, format, "
@@ -125,7 +127,8 @@ def pr_task(item: Item, now: datetime) -> str | None:
     if item.labels & board.DECISION_LABELS:
         return None  # its question is the task (decide / escalated)
     if item.in_queue:
-        return None  # the queue has it
+        # A failing merge group fails every entry behind it until fixed.
+        return "requeue" if item.queue_state == "UNMERGEABLE" else None
     if item.draft:
         return "stalled" if now - item.updated >= timedelta(hours=STALLED_HOURS) else None
     if item.checks in ("FAILURE", "ERROR"):

@@ -53,6 +53,15 @@ class PullRequestTasks(Case):
         self.w.ci(R, n, passed=True)
         self.assertEqual(self.kinds(n), ["enqueue"])
 
+    def test_unmergeable_queue_entry_is_requeued_while_still_queued(self):
+        # obs-studio#2324: a new lint on master failed its merge group, and
+        # #2316 behind it failed too, while the list showed neither.
+        n = self.green_pr()
+        self.w.enqueue(R, n)
+        self.assertEqual(self.kinds(n), [])
+        self.w.queue_fails(R, n)
+        self.assertEqual(self.kinds(n), ["requeue"])
+
     def test_failing_ci_is_fix_ci(self):
         n = self.w.open_pr(R, "alice")
         self.w.ci(R, n, passed=False)

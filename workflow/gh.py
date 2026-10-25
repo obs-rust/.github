@@ -295,7 +295,7 @@ class GhBackend:
             "pullRequests",
             common
             + """
-            isDraft isInMergeQueue mergeStateStatus reviews(first: 1) { totalCount }
+            isDraft isInMergeQueue mergeQueueEntry { state } mergeStateStatus reviews(first: 1) { totalCount }
             commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }""",
             volatile="states: OPEN",
         )
@@ -323,6 +323,7 @@ class GhBackend:
                     "pr",
                     draft=n["isDraft"],
                     in_queue=n["isInMergeQueue"],
+                    queue_state=(n.get("mergeQueueEntry") or {}).get("state", ""),
                     merge_state=n["mergeStateStatus"],
                     checks=rollup.get("state", ""),
                     reviews=n["reviews"]["totalCount"],
