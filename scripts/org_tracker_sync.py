@@ -32,6 +32,8 @@ import json
 import os
 import subprocess
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 OWNER = os.environ.get("PROJECT_OWNER", "obs-rust")
@@ -46,6 +48,10 @@ STATUSES = [
     "Ready to merge",
     "Done",
 ]
+# Reads run wide; writes stay narrow, since bursts of project mutations
+# trip GitHub's secondary rate limit.
+READ_WORKERS = 12
+WRITE_WORKERS = 6
 DECISION_LABELS = {"decision-needed", "human-review-needed"}
 
 
@@ -54,8 +60,14 @@ def graphql(query: str, **variables: Any) -> dict[str, Any]:
     for key, value in variables.items():
         flag = "-F" if isinstance(value, int) else "-f"
         args += [flag, f"{key}={value}"]
-    out = subprocess.run(args, check=True, capture_output=True, text=True).stdout
-    return json.loads(out)["data"]
+    for attempt in range(4):
+        run = subprocess.run(args, capture_output=True, text=True)
+        if run.returncode == 0:
+            return json.loads(run.stdout)["data"]
+        # Secondary rate limits and 502s are common on bursts of mutations.
+        print(f"gh api graphql failed (try {attempt + 1}): {run.stderr.strip()}")
+        time.sleep(5 * 2**attempt)
+    raise RuntimeError("gh api graphql kept failing")
 
 
 def org_repos() -> list[str]:
@@ -164,45 +176,64 @@ def set_status(pid: str, fid: str, item: str, option: str) -> None:
     )
 
 
+def place(
+    pid: str, fid: str, item: dict[str, Any] | None, n: dict[str, Any], option: str
+) -> str:
+    """Add one item if the project lacks it, then set its Status."""
+    if item is None:
+        item_id = graphql(
+            """mutation($p: ID!, $c: ID!) { addProjectV2ItemById(
+              input: {projectId: $p, contentId: $c}) { item { id } } }""",
+            p=pid,
+            c=n["id"],
+        )["addProjectV2ItemById"]["item"]["id"]
+    else:
+        item_id = item["id"]
+    set_status(pid, fid, item_id, option)
+    return "added" if item is None else "moved"
+
+
 def main() -> int:
     if not NUMBER:
         sys.exit("PROJECT_NUMBER is required")
     pid, fid, options, existing = project()
-    added = moved = 0
-    live: set[str] = set()
-    for repo in org_repos():
-        for n in open_items(repo):
-            live.add(n["id"])
+    with ThreadPoolExecutor(READ_WORKERS) as pool:
+        per_repo = list(zip(repos := org_repos(), pool.map(open_items, repos)))
+    live = {n["id"] for _, items in per_repo for n in items}
+
+    jobs: list[tuple[dict[str, Any] | None, dict[str, Any], str]] = []
+    for repo, items in per_repo:
+        for n in items:
             item = existing.get(n["id"])
             current = ((item or {}).get("status") or {}).get("name")
-            if current == n["status"]:
-                continue
-            print(f"{repo}#{n['number']}: {current or 'new'} -> {n['status']}")
-            if DRY_RUN:
-                continue
-            if item is None:
-                item_id = graphql(
-                    """mutation($p: ID!, $c: ID!) { addProjectV2ItemById(
-                      input: {projectId: $p, contentId: $c}) { item { id } } }""",
-                    p=pid,
-                    c=n["id"],
-                )["addProjectV2ItemById"]["item"]["id"]
-                added += 1
-            else:
-                item_id = item["id"]
-                moved += 1
-            set_status(pid, fid, item_id, options[n["status"]])
+            if current != n["status"]:
+                print(f"{repo}#{n['number']}: {current or 'new'} -> {n['status']}")
+                jobs.append((item, n, n["status"]))
     for content_id, item in existing.items():
         closed = item["content"].get("state") in ("CLOSED", "MERGED")
-        if content_id not in live and closed and (item.get("status") or {}).get(
-            "name"
-        ) != "Done":
-            print(f"{content_id}: -> Done")
-            if not DRY_RUN:
-                set_status(pid, fid, item["id"], options["Done"])
-                moved += 1
-    print(f"added {added}, status changed on {moved}")
-    return 0
+        status = (item.get("status") or {}).get("name")
+        if content_id not in live and closed and status != "Done":
+            print(f"{content_id}: {status or 'none'} -> Done")
+            jobs.append((item, {"id": content_id}, "Done"))
+    if DRY_RUN:
+        print(f"dry run: {len(jobs)} changes")
+        return 0
+
+    counts = {"added": 0, "moved": 0, "failed": 0}
+    with ThreadPoolExecutor(WRITE_WORKERS) as pool:
+        futures = [
+            pool.submit(place, pid, fid, item, n, options[s]) for item, n, s in jobs
+        ]
+        for future in as_completed(futures):
+            try:
+                counts[future.result()] += 1
+            except RuntimeError:
+                counts["failed"] += 1
+    print(
+        f"added {counts['added']}, status changed on {counts['moved']}, "
+        f"failed {counts['failed']}"
+    )
+    return 1 if counts["failed"] else 0
 
 
 if __name__ == "__main__":
