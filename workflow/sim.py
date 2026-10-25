@@ -292,7 +292,7 @@ class SimBackend:
 
     def check_counts(self, repo: str, number: int) -> tuple[int, int, int]:
         (checks,) = self.q("SELECT checks FROM items WHERE id=?", self.node(repo, number))[0]
-        return {"SUCCESS": (1, 0, 0), "FAILURE": (0, 1, 0)}.get(checks, (0, 0, 1))
+        return {"SUCCESS": (1, 0, 0), "FAILURE": (0, 1, 0), "": (0, 0, 0)}.get(checks, (0, 0, 1))
 
     def red_branches(self, org: str) -> list[str]:
         return [r for (r,) in self.q("SELECT repo FROM red")]
@@ -452,6 +452,12 @@ class World:
             "SUCCESS" if passed else "FAILURE",
             ("CLEAN" if mergeable else "DIRTY") if passed else "BLOCKED",
             item,
+        )
+
+    def no_ci(self, repo: str, pr: int) -> None:
+        """A repo with no PR workflows: no rollup ever reports."""
+        self.gh.x(
+            "UPDATE items SET checks='', merge_state='CLEAN' WHERE id=?", self.gh.node(repo, pr)
         )
 
     def review(self, repo: str, pr: int) -> None:
