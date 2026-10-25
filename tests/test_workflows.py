@@ -40,6 +40,19 @@ class ThinWorkflowTest(unittest.TestCase):
         self.assertRegex(text, r'cron: "\*/30 \* \* \* \*"')
 
 
+class CallerTemplateTest(unittest.TestCase):
+    """The reusable claim bot has no triggers of its own; the caller snippet in
+    WORKFLOW.md is what repos copy, so it must run on comments and hourly."""
+
+    def test_caller_runs_on_new_comments_and_hourly(self):
+        doc = (ROOT / "WORKFLOW.md").read_text()
+        snippet = doc[doc.index("name: Claim bot") : doc.index("claim-bot.yml@master")]
+        self.assertIn("issue_comment:", snippet)
+        self.assertRegex(snippet, r"types: \[created\]")
+        self.assertRegex(snippet, r'cron: "\d+ \* \* \* \*"')
+        self.assertIn("issues: write", snippet)
+
+
 class LabelsTest(unittest.TestCase):
     def test_every_label_the_code_reads_is_created(self):
         from workflow import board, claims, labels

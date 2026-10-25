@@ -145,6 +145,7 @@ class SimBackend:
             prs,
             {a: parse(t) for a, t in assigned},
             self._open_blockers(item),
+            self.q("SELECT state FROM items WHERE id=?", item)[0][0] != "OPEN",
         )
 
     def _labels(self, item: str) -> set[str]:

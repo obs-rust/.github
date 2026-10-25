@@ -626,6 +626,55 @@ class DecisionTest(unittest.TestCase):
         self.assertTrue(cb.handles("/ready", set()))
 
 
+class HistoricalCasesTest(unittest.TestCase):
+    """Cases from the old obs-studio claim bot and from real claim threads."""
+
+    def test_anyone_can_mark_a_claimed_issue_decision_needed(self):  # 5f5d2cdbc, #2069
+        c = human("bob", "Decision needed: A or B?", h(1))
+        self.assertIn(("label_add", cb.DECISION), cb.decide_comment(claimed_by_alice(), c, h(1)))
+
+    def test_claimant_progress_unblocks_but_keeps_the_decision(self):  # #2057
+        i = claimed_by_alice(labels=(cb.READY, cb.DECISION, cb.BLOCKED))
+        acts = cb.decide_comment(i, human("alice", "pushed the seam", h(2)), h(2))
+        self.assertEqual(acts, [("label_remove", cb.BLOCKED)])
+
+    def test_blocked_is_a_command_for_the_event_gate(self):
+        self.assertTrue(cb.handles("Blocked: waiting on #12", set()))
+
+    def test_plain_claim_on_a_fresh_blocked_claim_is_refused(self):  # e9f0b4a10, #1808
+        i = claimed_by_alice()
+        c = human("alice", "Blocked: waiting on the maintainer", h(1))
+        i = applied(i, c, cb.decide_comment(i, c, h(1)))
+        acts = cb.decide_comment(i, human("bob", "Claiming: it", h(30)), h(30))
+        self.assertTrue(rejected(acts, "bob"), acts)  # past 24 h, but blocked lasts 7 days
+
+    def test_claim_with_a_takeover_in_the_same_line_is_a_plain_claim(self):  # #1499
+        line = "Claiming: #1499 — the port. Taking over stale claim from @alice"
+        acts = cb.decide_comment(claimed_by_alice(), human("bob", line, h(1)), h(1))
+        self.assertTrue(rejected(acts, "bob"), acts)
+
+    def test_claim_below_the_first_line_does_nothing(self):  # #2057: pinned on purpose
+        c = human("bob", "Maintainer approved this proposal.\n\nClaiming: #2057", h(1))
+        self.assertEqual(cb.decide_comment(issue(), c, h(1)), [])
+
+    def test_claim_on_a_closed_issue_is_refused(self):
+        i = issue()
+        i.closed = True
+        acts = cb.decide_comment(i, human("bob", "Claiming: it", h(1)), h(1))
+        self.assertTrue(rejected(acts, "bob"), acts)
+        self.assertIn("closed", acts[0][1])
+
+    def test_slice_claim_on_a_tracker_points_to_sub_issues(self):  # #145, #153, #1876
+        i = issue(labels=(cb.READY, cb.TRACKER))
+        acts = cb.decide_comment(i, human("bob", "Claiming slice 3 of #145", h(1)), h(1))
+        self.assertTrue(rejected(acts, "bob"), acts)
+        self.assertIn("sub-issue", acts[0][1])
+
+    def test_investigating_a_tracker_is_allowed(self):
+        c = human("bob", "Claiming: investigation", h(1))
+        self.assertTrue(accepted(cb.decide_comment(issue(labels=(cb.TRACKER,)), c, h(1)), c))
+
+
 class QuietTest(unittest.TestCase):
     """Only rejections (and a decision that resumes a claim) comment."""
 
