@@ -454,6 +454,43 @@ def decide_command(issue: Issue, comment: Comment, now: datetime) -> list[tuple]
     return []
 
 
+CATCH_UP = timedelta(hours=3)  # the sweep is hourly; cover two missed runs
+
+
+def missed(issue: Issue, now: datetime) -> list[Comment]:
+    """Recent commands the bot never answered: no reaction and no bot reply
+    naming the author after them. A comment event can be lost (the workflow
+    was broken, or GitHub dropped a pending run from the concurrency group);
+    the sweep replays these."""
+    out = []
+    for i, c in enumerate(issue.comments):
+        if is_bot(c.author) or c.granted or now - c.created > CATCH_UP:
+            continue
+        if not handles(c.body, issue.labels):
+            continue
+        later = issue.comments[i + 1 :]
+        if any(is_bot(x.author) and f"@{c.author}" in x.body for x in later):
+            continue
+        out.append(c)
+    return out
+
+
+def effective(issue: Issue, actions: list[tuple]) -> list[tuple]:
+    """Leave out actions the issue already reflects, so a replay is idempotent."""
+    out = []
+    for kind, arg in actions:
+        if kind == "label_add" and arg in issue.labels:
+            continue
+        if kind == "label_remove" and arg not in issue.labels:
+            continue
+        if kind == "assign" and arg in issue.assignees:
+            continue
+        if kind == "unassign" and arg not in issue.assignees:
+            continue
+        out.append((kind, arg))
+    return out
+
+
 def decide_sweep(issue: Issue, now: datetime) -> list[tuple]:
     """Expire a stale claim (unassign, silently); convert a `claimed` label
     into an assignment."""

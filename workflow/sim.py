@@ -157,6 +157,18 @@ class SimBackend:
             item,
         )[0][0]
 
+    def issues_commented_since(self, repo: str, since: datetime) -> list[int]:
+        return [
+            n
+            for (n,) in self.q(
+                "SELECT DISTINCT number FROM items JOIN comments ON comments.item=items.id "
+                "WHERE repo=? AND kind='issue' AND state='OPEN' AND comments.created>=? "
+                "ORDER BY number",
+                repo,
+                iso(since),
+            )
+        ]
+
     def claimed_issues(self, repo: str) -> list[int]:
         return [
             n
@@ -373,9 +385,16 @@ class World:
             self.gh.apply_issue(repo, number, ("label_remove" if remove else "label_add", name))
 
     def comment(
-        self, repo: str, number: int, author: str, body: str, assoc: str = "CONTRIBUTOR"
+        self,
+        repo: str,
+        number: int,
+        author: str,
+        body: str,
+        assoc: str = "CONTRIBUTOR",
+        deliver: bool = True,
     ) -> int:
-        """Post a comment and run the claim bot's issue_comment workflow."""
+        """Post a comment and run the claim bot's issue_comment workflow
+        (unless `deliver` is false: GitHub lost the event)."""
         from workflow import claim_bot
 
         item = self.gh.node(repo, number)
@@ -399,7 +418,8 @@ class World:
         }
         if kind == "pr":
             event["issue"]["pull_request"] = {}
-        claim_bot.on_comment(self.gh, repo, event, self.now)
+        if deliver:
+            claim_bot.on_comment(self.gh, repo, event, self.now)
         return cur.lastrowid
 
     def open_pr(self, repo: str, author: str, closes=(), draft: bool = False) -> int:
