@@ -49,6 +49,7 @@ coordinator holds, and orders them:
 | `fix-ci` | a PR's checks fail | §3 |
 | `enqueue` | green and mergeable, not queued | `gh pr merge <N> -R <repo> --auto`, then confirm (gh pr view has no queue field): `gh api graphql -f query='{repository(owner:"obs-rust",name:"<repo>"){pullRequest(number:<N>){isInMergeQueue}}}'` |
 | `merge` | green and reviewed, in a repo with **no** merge queue | `gh pr merge <N> -R <repo> --squash` |
+| `merge-local` | reviewed, in a repo with **no PR CI** | run the repo's tests and lint on the PR head yourself; all pass: squash-merge and say what you ran |
 | `rebase` | conflicts or is behind | `gh pr update-branch <N> --rebase`, or by hand |
 | `review` | no review yet | review it (§4); then queue it, or merge it in a repo with no queue |
 | `decide` | `decision-needed` | §5 |
@@ -86,7 +87,7 @@ maintainer edits are allowed, always with
 never with failing checks, never with `--admin`.
 
 A repo without a merge queue: merge a green, reviewed PR with the repo's
-usual strategy. A PR with no CI at all: review it and report it; don't merge.
+usual strategy. A PR in a repo with no CI at all is `merge-local`: you are its CI.
 
 ## 3. Fixing CI (`fix-ci`, `fix-master`, ejections)
 

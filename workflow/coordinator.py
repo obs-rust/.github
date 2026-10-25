@@ -22,6 +22,7 @@ Order, most urgent first:
                  failure, or comment the cause for the author
   enqueue        a green, mergeable PR is not in the merge queue
   merge          a green, reviewed PR in a repo with no merge queue
+  merge-local    a reviewed PR in a repo with no PR CI: run its tests, then merge
   rebase         a PR conflicts with or is behind its base
   review         a ready PR has no review
   decide         an open decision-needed question
@@ -54,6 +55,7 @@ ORDER = [
     "fix-ci",
     "enqueue",
     "merge",
+    "merge-local",
     "rebase",
     "review",
     "decide",
@@ -82,6 +84,10 @@ HOW = {
     "<N>` must exit 0 (every check finished, none failed); then "
     "`gh pr merge <N> -R obs-rust/<repo> --squash` "
     "once it is green and reviewed (an unreviewed one is listed under review).",
+    "merge-local": "The repo runs no CI on PRs. Check out the PR head (plumbing or the "
+    "local checkout), run the repo's own test and lint commands (README/AGENTS.md); all "
+    "pass: `gh pr merge <N> -R obs-rust/<repo> --squash` and say in a comment what you "
+    "ran. Any fail: comment the output for the author.",
     "rebase": "`gh pr update-branch <N> --rebase`, or rebase by hand when it conflicts.",
     "review": "Review it: correctness, RED then GREEN, required test tiers, the features "
     "ledger and AGENTS.md. Post a PR review; push mechanical fixups yourself. Then, if `uv run -m "
@@ -138,6 +144,8 @@ def pr_task(item: Item, now: datetime) -> str | None:
         return "requeue" if item.checks == "SUCCESS" else "rebase"
     if item.merge_state == "BEHIND":
         return "rebase"
+    if not item.merge_queue and not item.checks and item.merge_state in ("CLEAN", "UNSTABLE"):
+        return "merge-local" if item.reviews else "review"  # no CI will ever report
     if item.merge_state == "CLEAN" and item.checks == "SUCCESS":
         if item.merge_queue:
             return "enqueue"
@@ -232,6 +240,8 @@ def main() -> int:
         repo, number = args.task
         passed, failed, pending = gh.check_counts(repo, int(number))
         print(f"{repo}#{number}: {passed} passed, {failed} failed, {pending} running")
+        if not passed + failed + pending:
+            print("no CI reports on this PR: if the repo has none, it is a merge-local task")
         return 0 if green(passed, failed, pending) else 1
     if args.action != "list":
         kind, repo, number = args.task

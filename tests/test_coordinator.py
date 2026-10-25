@@ -143,6 +143,27 @@ class NoMergeQueueRepos(Case):
         self.assertEqual(self.kinds(n), ["review"])
 
 
+class NoCiRepos(Case):
+    """obs-studio-libs#12: the repo runs no CI on PRs, so nothing ever turns green."""
+
+    def test_unreviewed_pr_is_reviewed_then_merged_locally(self):
+        self.w.no_merge_queue(R)
+        n = self.w.open_pr(R, "alice")
+        self.w.no_ci(R, n)
+        self.assertEqual(self.kinds(n), ["review"])
+        self.w.review(R, n)
+        self.assertEqual(self.kinds(n), ["merge-local"])
+
+    def test_queue_repos_never_merge_locally(self):
+        n = self.w.open_pr(R, "alice")
+        self.w.no_ci(R, n)
+        self.w.review(R, n)
+        self.assertNotIn("merge-local", self.kinds(n))
+
+    def test_checks_gate_is_closed_without_ci(self):
+        self.assertFalse(coordinator.green(0, 0, 0))
+
+
 class FlowTestFindings(Case):
     """Gaps a coordinator hit on its first live tick."""
 
@@ -338,6 +359,9 @@ class OrderAndReport(Case):
         mrg = self.w.open_pr("obs-rust/obs-deps", "jo")
         self.w.review("obs-rust/obs-deps", mrg)
         self.w.ci("obs-rust/obs-deps", mrg, passed=True)
+        loc = self.w.open_pr("obs-rust/obs-deps", "kim")
+        self.w.no_ci("obs-rust/obs-deps", loc)
+        self.w.review("obs-rust/obs-deps", loc)
         self.w.advance(hours=1)
         self.assertEqual(self.kinds(), coordinator.ORDER)
         del inv, stalled, tri, dec, rev

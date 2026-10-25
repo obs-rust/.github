@@ -63,7 +63,11 @@ Use the existing local checkout of that repo (`~/dev/obs-rust/`,
 `~/dev/obs-rust/obs-studio2-extern/`); clone there only if none exists.
 Never a second clone or worktree of a repo you already have. Bring the
 default branch up to date (`git fetch origin && git switch <default> &&
-git merge --ff-only origin/<default>`), then branch from it. Follow the repo's AGENTS.md for build, lint and test.
+git merge --ff-only origin/<default>`), then branch from it. `<default>` is
+not always `master` (obs-studio-libs: `main`):
+`gh repo view obs-rust/<repo> --json defaultBranchRef -q .defaultBranchRef.name`.
+A repo with no PR CI: run its own tests and lint locally and paste the
+commands and results in the PR; the coordinator reruns them before merging. Follow the repo's AGENTS.md for build, lint and test.
 
 **Checkout busy** (another session has it mid-work, and you must not touch
 its HEAD, index or files): build commits with plumbing instead of a second
