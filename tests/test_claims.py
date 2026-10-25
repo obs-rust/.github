@@ -166,6 +166,26 @@ class ReadyTest(unittest.TestCase):
             self.assertTrue(cb.INVESTIGATION_CLAIM_RE.match(line), line)
         self.assertFalse(cb.INVESTIGATION_CLAIM_RE.match("Claiming: the fix"))
 
+    def test_maintainer_claim_triages_and_assigns(self):
+        # obs-studio#2303: a maintainer's agent filed an issue with its plan and
+        # claimed it a minute later; the Ready gate refused it.
+        c = human("zackees", "Claiming: #2303", h(0), assoc="OWNER")
+        acts = cb.decide_comment(issue(labels=()), c, h(0))
+        self.assertEqual(acts, [("label_add", cb.READY), ("assign", "zackees"), ("react", c.id)])
+
+    def test_contributor_claim_still_waits_for_ready(self):
+        c = human("bob", "Claiming: it", h(0))
+        self.assertTrue(rejected(cb.decide_comment(issue(labels=()), c, h(0)), "bob"))
+
+    def test_maintainer_claim_still_respects_investigation_decisions_and_blockers(self):
+        for i in (
+            issue(labels=(cb.INVESTIGATE,)),
+            issue(labels=(cb.DECISION,)),
+            issue(labels=(), blockers=1),
+        ):
+            c = human("zackees", "Claiming: it", h(0), assoc="MEMBER")
+            self.assertTrue(rejected(cb.decide_comment(i, c, h(0)), "zackees"), i.labels)
+
     def test_p0_and_critical_never_wait_for_ready(self):
         for label in (cb.P0, cb.CRITICAL):
             c = human("bob", "Claiming: fix master", h(0))
