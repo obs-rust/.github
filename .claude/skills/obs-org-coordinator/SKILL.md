@@ -161,6 +161,15 @@ Check the issue against the [definition of Ready](../../../WORKFLOW.md#definitio
   the issue out of triage; where the bot runs, the extra add is harmless.
   Split an XL into sub-issues.
 - **Underdefined:** comment what is missing and `/investigate`.
+- **Blocked by other issues, named in prose:** link them as GitHub issue
+  dependencies in the same tick, before the verdict comment:
+  `gh api -X POST repos/obs-rust/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker-id>`
+  (the numeric `id` from `gh api repos/obs-rust/<repo>/issues/<blocker> --jq .id`,
+  not the issue number). `issueDependenciesSummary.blockedBy` is what the
+  work list reads: with one open blocker the issue leaves `triage` and comes
+  back by itself when the last blocker closes. Without the link a blocked
+  issue re-lists every tick and each tick re-posts the same triage comment —
+  obs-studio#1865 carried five of them in four days.
 - **Not a task** (an idea, a question): move it to Discussions and close it.
 - **Already fixed or a duplicate:** close it with the link.
 - **A tracker:** add its children as sub-issues; it leaves triage. A tracker
