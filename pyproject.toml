@@ -1,0 +1,9 @@
+[project]
+name = "obs-rust-workflow"
+version = "0.1.0"
+description = "Claims, the org board and the coordinator's work list for the obs-rust org"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.ruff]
+line-length = 100
