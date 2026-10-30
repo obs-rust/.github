@@ -33,6 +33,19 @@ Highest priority first (`P0` > `P1` > `P2` > `P3`), then oldest. Prefer
 work that unblocks others. A `P0` (red master, broken release) needs no
 `ready` label.
 
+**Take one to three at a time.** A big issue goes alone: a large port or
+subsystem (the CEF / obs-browser work, for example), anything sized
+`size:L` or larger, or anything you expect to need more than one session.
+Otherwise, after picking the top issue, add up to two of the most similar
+Ready issues in the **same repo**: the same platform (one macOS-only or
+Windows-only lane) or the same area (the same crate, plugin, workflow or
+test binary). Claim each one (§3), naming the others, and land them in
+**one PR**: a RED then GREEN commit pair per issue, `Refs #a, #b, #c` in the
+body. Every PR pays for a PR run, a merge-queue run and a master push, so a
+batch of three costs a third of the CI. Never add a dissimilar issue to fill
+the batch. A `P0` goes alone. If one item turns out blocked or bigger than
+expected, ship the others and `Releasing` that one with the reason.
+
 Nothing Ready that you can do? Take an investigation instead: an issue in
 **Triage** or **Investigating** with nobody on it.
 
