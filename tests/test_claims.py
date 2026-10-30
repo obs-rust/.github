@@ -626,6 +626,55 @@ class DecisionTest(unittest.TestCase):
         self.assertTrue(cb.handles("/ready", set()))
 
 
+class DecisionOrderTest(unittest.TestCase):
+    """An answer only answers the newest question (obs-rust/.github#22, from
+    obs-studio#3031 and #2593: an older `Decided:` cleared a newer open one)."""
+
+    def test_an_older_decided_does_not_answer_a_newer_question(self):
+        answer = human("zed", "Decided: option 1.", h(1), assoc="OWNER")
+        question = human("alice", "Decision needed: which fix under that test?", h(2))
+        i = issue(
+            comments=(answer, question),
+            labels=(cb.DECISION, cb.BLOCKED),
+            assignees=("alice",),
+        )
+        # Replaying the 09:12 answer against the 09:48 question: no label
+        # removal and no "the decision is in".
+        self.assertEqual(cb.decide_comment(i, answer, h(3)), [("react", answer.id)])
+
+    def test_a_decided_after_the_question_clears_it(self):
+        question = human("alice", "Decision needed: A or B?", h(1))
+        i = issue(comments=(question,), labels=(cb.DECISION,))
+        answer = human("zed", "Decided: B.", h(2), assoc="OWNER")
+        self.assertIn(("label_remove", cb.DECISION), cb.decide_comment(i, answer, h(2)))
+
+    def test_catch_up_does_not_replay_a_superseded_answer(self):
+        answer = human("zed", "Decided: option 1.", h(1), assoc="OWNER")
+        question = human("alice", "Decision needed: which fix?", h(2))
+        i = issue(comments=(answer, question), labels=(cb.DECISION, cb.BLOCKED))
+        replayed = [c.id for c in cb.missed(i, h(2.5))]
+        self.assertEqual(replayed, [question.id])
+
+    def test_the_sweep_readds_a_lost_label_for_an_open_question(self):
+        question = human("alice", "Decision needed: which fix?", h(1))
+        i = issue(comments=(question,), labels=(cb.READY,), assignees=("alice",))
+        self.assertIn(("label_add", cb.DECISION), cb.decide_sweep(i, h(2)))
+
+    def test_the_sweep_clears_an_answered_decision(self):
+        question = human("alice", "Decision needed: A or B?", h(1))
+        answer = human("zed", "Decided: B.", h(2), assoc="OWNER")
+        i = issue(
+            comments=(question, answer),
+            labels=(cb.READY, cb.DECISION),
+            assignees=("alice",),
+        )
+        self.assertIn(("label_remove", cb.DECISION), cb.decide_sweep(i, h(3)))
+
+    def test_the_sweep_leaves_a_label_without_decision_comments_alone(self):
+        i = claimed_by_alice(labels=(cb.READY, cb.DECISION))
+        self.assertNotIn(("label_remove", cb.DECISION), cb.decide_sweep(i, h(100)))
+
+
 class HistoricalCasesTest(unittest.TestCase):
     """Cases from the old obs-studio claim bot and from real claim threads."""
 
