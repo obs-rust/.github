@@ -32,6 +32,10 @@ Read from any line of a comment:
   Decision needed: <question>       anyone adds `decision-needed`; from the
                                     claimant it also counts as `Blocked:`.
 
+An answer only answers the questions already on the issue: a `Decided:` older
+than the newest `Decision needed:` clears nothing and posts nothing, and the
+sweep repairs `decision-needed` from the order of the two kinds.
+
 Only an issue labeled `ready` (or `P0`/`critical`, which never wait) can be
 claimed for implementation. It cannot be claimed while it has an open blocker
 (GitHub issue dependencies) or an open decision.
@@ -218,6 +222,48 @@ def blocks(c: Comment) -> bool:
     return bool(BLOCKED_RE.match(c.first_line())) or asks_decision(c.body)
 
 
+def is_maintainer(c: Comment) -> bool:
+    return c.association in MAINTAINERS
+
+
+def decision_comments(issue: Issue) -> tuple[Comment | None, Comment | None]:
+    """The newest question anyone asked, and the newest maintainer answer."""
+    asked = [c for c in issue.comments if not is_bot(c.author) and asks_decision(c.body)]
+    answered = [c for c in issue.comments if is_maintainer(c) and DECIDED_RE.match(c.first_line())]
+    return (
+        max(asked, key=lambda c: c.created) if asked else None,
+        max(answered, key=lambda c: c.created) if answered else None,
+    )
+
+
+def question_newer_than(issue: Issue, when: datetime) -> bool:
+    """Whether a `Decision needed:` newer than `when` is in the thread.
+
+    A comment's first line is a command, so an answer only answers the question
+    that was on the issue when it was written. Without this check the sweep
+    replays an old `Decided:` over a newer open question: it clears
+    `decision-needed`/`claim-blocked` and posts "the decision is in", then the
+    newer question sets them again (obs-studio#3031, obs-rust/.github#22)."""
+    return any(
+        not is_bot(c.author) and asks_decision(c.body) and c.created > when for c in issue.comments
+    )
+
+
+def decision_state(issue: Issue) -> str:
+    """ "open", "answered" or "unknown" (no decision comments in the history).
+
+    Only the order of the two comment kinds decides it: a decision is open
+    while the newest `Decision needed:` is newer than the newest maintainer
+    `Decided:`/`Decision:`. "unknown" means the thread does not say, so the
+    label is left as it is rather than cleared."""
+    asked, answered = decision_comments(issue)
+    if asked is None:
+        return "unknown"
+    if answered is None or asked.created > answered.created:
+        return "open"
+    return "answered"
+
+
 def blocked_since(issue: Issue, claim: Claim) -> datetime | None:
     if BLOCKED not in issue.labels:
         return None
@@ -341,6 +387,10 @@ def decide_comment(issue: Issue, comment: Comment, now: datetime) -> list[tuple]
 
 
 def decided(issue: Issue, comment: Comment) -> list[tuple]:
+    if question_newer_than(issue, comment.created):
+        # It answers an older round: the newer question is still open, so
+        # neither the labels nor "the decision is in" may reflect this one.
+        return [("react", comment.id)]
     acts = [("label_remove", DECISION)]
     acts += [("label_remove", HUMAN_REVIEW)] if HUMAN_REVIEW in issue.labels else []
     claim = current_claim(issue)
@@ -477,6 +527,8 @@ def missed(issue: Issue, now: datetime) -> list[Comment]:
             continue
         if not handles(c.body, issue.labels):
             continue
+        if DECIDED_RE.match(c.first_line()) and question_newer_than(issue, c.created):
+            continue  # a superseded answer: replaying it would clear the newer question
         later = issue.comments[i + 1 :]
         if any(is_bot(x.author) and f"@{c.author}" in x.body for x in later):
             continue
@@ -500,6 +552,31 @@ def effective(issue: Issue, actions: list[tuple]) -> list[tuple]:
     return out
 
 
+def reconcile_decision(issue: Issue, claim: Claim) -> list[tuple]:
+    """Repair `decision-needed`, and the claim's block, from the thread.
+
+    The sweep is the only path that can fix a label after a lost event, so it
+    sets the label from an open question and clears it once a maintainer answer
+    newer than the newest question is in the history. A thread with no decision
+    comments (`unknown`) and an escalated issue are left alone: the label may
+    have been added by hand, and `human-review-needed` has no clearing command.
+    """
+    state = decision_state(issue)
+    if state == "open":
+        if DECISION in issue.labels or HUMAN_REVIEW in issue.labels:
+            return []
+        return [("label_add", DECISION)]
+    if state != "answered":
+        return []
+    acts = [("label_remove", DECISION)] if DECISION in issue.labels else []
+    asked, _ = decision_comments(issue)
+    since = blocked_since(issue, claim)
+    if since is not None and asked is not None and since == asked.created:
+        # The question was the block; the answer ends it, as the event path does.
+        acts.append(("label_remove", BLOCKED))
+    return acts
+
+
 def decide_sweep(issue: Issue, now: datetime) -> list[tuple]:
     """Expire a stale claim (unassign, silently); convert a `claimed` label
     into an assignment."""
@@ -513,7 +590,12 @@ def decide_sweep(issue: Issue, now: datetime) -> list[tuple]:
     if stale:
         return drop(issue)
     acts: list[tuple] = []
-    if BLOCKED in issue.labels and not blocked_since(issue, claim):
+    acts += reconcile_decision(issue, claim)
+    if (
+        BLOCKED in issue.labels
+        and not blocked_since(issue, claim)
+        and ("label_remove", BLOCKED) not in acts
+    ):
         acts.append(("label_remove", BLOCKED))
     if not issue.assignees:  # a `claimed` label from before assignment
         acts += [("assign", claim.user), ("label_remove", CLAIMED)]
