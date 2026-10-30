@@ -1,0 +1,28 @@
+name: claim-bot
+
+# Reusable claim bot for every obs-rust repo. A repo enables claims with a
+# small caller workflow (see README.md#claims). All logic is in workflow/
+# (claim_bot.py, claims.py); this file only runs it with the caller's token.
+# The comment body is read from the event file, never interpolated here.
+
+on:
+  workflow_call:
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: obs-rust/.github
+          ref: master
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run -m workflow.claim_bot auto
