@@ -113,6 +113,22 @@ uv run -m workflow.coordinator done review obs-studio 2272 --owner "$COORDINATOR
 A lease is a git ref in this repo; GitHub creates a ref atomically, so only
 one taker wins. It lapses after 2 hours. The list hides tasks others hold.
 
+## Decisions are posted
+
+When the maintainer asks an agent (worker or coordinator) to make a
+decision, settle a question or "come up with the best answer", that request
+includes posting it. A decision kept in the chat unblocks nothing. In the
+same turn:
+
+1. Post it as a `Decided: <answer>` comment on the issue it settles, with the
+   reasons and any measurements. The claim bot then clears `decision-needed`
+   and resumes a blocked claim.
+2. Comment on every open PR and issue in flight that the decision changes,
+   saying what each one now has to do and linking the `Decided:` comment.
+
+Ask before posting only when the maintainer explicitly said not to post, or
+when the decision would publish something private (see SECURITY.md).
+
 ## Simulation
 
 Every rule runs against a SQLite stand-in for GitHub and its Actions
