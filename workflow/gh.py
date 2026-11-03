@@ -8,6 +8,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 
 from workflow import ghcache, log
 from workflow.claims import BOT, CLAIMED, COMMANDS, REACTION, is_bot
@@ -149,8 +150,24 @@ class GhBackend:
         kind, arg = action
         base = ["gh", "issue", "edit", str(number), "--repo", repo]
         cmd = {
-            "label_add": base + ["--add-label", arg],
-            "label_remove": base + ["--remove-label", arg],
+            # REST accepts issues:write for PR labels too; gh issue edit
+            # selects GraphQL, which instead requires pull-requests:write.
+            "label_add": [
+                "gh",
+                "api",
+                "-X",
+                "POST",
+                f"repos/{repo}/issues/{number}/labels",
+                "-f",
+                f"labels[]={arg}",
+            ],
+            "label_remove": [
+                "gh",
+                "api",
+                "-X",
+                "DELETE",
+                f"repos/{repo}/issues/{number}/labels/{quote(str(arg), safe='')}",
+            ],
             "assign": base + ["--add-assignee", arg],
             "unassign": base + ["--remove-assignee", arg],
             "react": [
@@ -162,7 +179,15 @@ class GhBackend:
                 "-f",
                 f"content={REACTION}",
             ],
-            "comment": ["gh", "issue", "comment", str(number), "--repo", repo, "--body", arg],
+            "comment": [
+                "gh",
+                "api",
+                "-X",
+                "POST",
+                f"repos/{repo}/issues/{number}/comments",
+                "-f",
+                f"body={arg}",
+            ],
         }[kind]
         run(cmd)
 

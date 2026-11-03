@@ -27,7 +27,10 @@ def references(repo, body):
 
 def exempt(files):
     return bool(files) and all(
-        p.endswith(".md") or p.startswith(("docs/", "ci/", ".github/", "tests/")) for p in files
+        p.endswith(".md")
+        or p.startswith(("docs/", "ci/", ".github/", "tests/"))
+        or p in {"ci.toml", "local-gate.toml", "ci-attestations.yml"}
+        for p in files
     )
 
 
