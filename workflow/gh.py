@@ -104,6 +104,12 @@ class GhBackend:
             open_blockers=deps.get("blocked_by", 0),
         )
 
+    def pr_files(self, repo: str, number: int) -> list[str]:
+        return [f["filename"] for f in rest(f"repos/{repo}/pulls/{number}/files?per_page=100")]
+
+    def pull_request(self, repo: str, number: int) -> dict:
+        return rest(f"repos/{repo}/pulls/{number}", paginate=False)
+
     def _pr(self, repo: str, number: int) -> LinkedPR:
         pr = rest(f"repos/{repo}/pulls/{number}", paginate=False)
         activity = [ts(pr["created_at"])]

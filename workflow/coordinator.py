@@ -46,11 +46,12 @@ import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from workflow import board, claims, lease
+from workflow import board, claims, lease, pr_claims
 from workflow.model import Item
 
 ORDER = [
     "fix-master",
+    "claim-conflict",
     "requeue",
     "fix-ci",
     "enqueue",
@@ -65,6 +66,9 @@ ORDER = [
     "escalated",
 ]
 HOW = {
+    "claim-conflict": "Re-read the PR closing references and the issues, including accepted claim "
+    "comments. Correct the references or resolve the claim with its owner; never queue until "
+    "the claim check passes. Recheck the PR event after fixing the issue state.",
     "fix-master": "Read the failing run on the default branch, find the PR that broke it "
     "and fix or revert it first. Queued PRs fail until it is green. A failure only an "
     "admin can fix (token, secret, branch rule): open or update one `human-review-needed` "
@@ -130,6 +134,8 @@ def task(kind: str, item: Item, now: datetime, since: datetime | None = None) ->
 
 
 def pr_task(item: Item, now: datetime) -> str | None:
+    if pr_claims.LABEL in item.labels:
+        return "claim-conflict"
     if item.labels & board.DECISION_LABELS:
         return None  # its question is the task (decide / escalated)
     if item.in_queue:
@@ -255,7 +261,13 @@ def main() -> int:
         print(f"released {k}" if lease.release(gh, k, args.owner) else f"not yours: {k}")
         return 0
     held = lease.held_by_others(gh, args.owner, now)
-    work = tasks(gh.items(args.org), gh.red_branches(args.org), now, held)
+    items = gh.items(args.org)
+    for item in items:
+        if item.kind == "pr" and item.state == "OPEN" and not item.in_queue:
+            repo = item.repo if "/" in item.repo else f"{args.org}/{item.repo}"
+            if pr_claims.conflicts(gh, repo, gh.pull_request(repo, item.number)):
+                item.labels.add(pr_claims.LABEL)
+    work = tasks(items, gh.red_branches(args.org), now, held)
     print(json.dumps([asdict(t) for t in work], indent=1) if args.json else report(work))
     return 0
 

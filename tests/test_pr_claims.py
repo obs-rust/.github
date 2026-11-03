@@ -17,10 +17,16 @@ class PullRequestClaims(unittest.TestCase):
 
     def event(self, body, author="alice", action="opened", labels=()):
         pr = self.w.open_pr(R, author)
-        return {"action": action, "pull_request": {
-            "number": pr, "body": body, "user": {"login": author},
-            "labels": [{"name": label} for label in labels], "state": "open",
-        }}
+        return {
+            "action": action,
+            "pull_request": {
+                "number": pr,
+                "body": body,
+                "user": {"login": author},
+                "labels": [{"name": label} for label in labels],
+                "state": "open",
+            },
+        }
 
     def check(self, event):
         return claim_bot.on_pull_request(self.w.gh, R, event, self.w.now)
@@ -84,7 +90,9 @@ class PullRequestClaims(unittest.TestCase):
                 issue = self.w.open_issue(R)
                 event = self.event(f"Fixes #{issue}")
                 self.check(event)
-                self.assertNotIn("claim-conflict", self.w.labels(R, event["pull_request"]["number"]))
+                self.assertNotIn(
+                    "claim-conflict", self.w.labels(R, event["pull_request"]["number"])
+                )
 
     def test_coordinator_does_not_enqueue_a_flagged_green_pr(self):
         event = self.event("Fixes #1")
@@ -93,3 +101,34 @@ class PullRequestClaims(unittest.TestCase):
         self.w.ci(R, pr, True)
         item = next(i for i in self.w.gh.items("obs-rust") if i.number == pr)
         self.assertEqual(coordinator.pr_task(item, self.w.now), "claim-conflict")
+
+    def test_unavailable_reference_is_a_conflict_not_an_exception(self):
+        event = self.event("Fixes #999999")
+        self.assertFalse(self.check(event))
+        pr = event["pull_request"]["number"]
+        self.assertIn("could not be read", self.w.bot_comments(R, pr)[0])
+
+    def test_accepted_stale_takeover_is_a_claim(self):
+        issue = self.w.open_issue(R, labels={"ready"})
+        self.w.comment(R, issue, "bob", "Claiming: original")
+        self.w.advance(hours=25)
+        self.w.comment(R, issue, "alice", "Taking over stale claim from @bob")
+        event = self.event(f"Fixes #{issue}")
+        self.assertTrue(self.check(event))
+
+    def test_cross_repo_reference_and_fenced_example(self):
+        self.assertEqual(
+            __import__("workflow.pr_claims", fromlist=["references"]).references(
+                R, "Fixes obs-rust/.github#26\n```\nFixes #999\n```\nRefs #100"
+            ),
+            [("obs-rust/.github", 26)],
+        )
+
+    def test_rejected_comment_does_not_become_accepted_on_later_assignment(self):
+        issue = self.w.open_issue(R, labels={"ready"})
+        self.w.comment(R, issue, "bob", "Claiming: original")
+        self.w.comment(R, issue, "alice", "Claiming: parallel")
+        self.w.advance(hours=1)
+        self.w.gh.apply_issue(R, issue, ("unassign", "bob"))
+        self.w.gh.apply_issue(R, issue, ("assign", "alice"))
+        self.assertFalse(self.check(self.event(f"Fixes #{issue}")))

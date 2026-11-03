@@ -18,7 +18,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from workflow import claims, log
+from workflow import claims, log, pr_claims
 from workflow.gh import ts
 from workflow.model import Comment
 
@@ -56,6 +56,40 @@ def on_comment(gh, repo: str, event: dict, now: datetime, dry_run: bool = False)
     apply(gh, repo, number, claims.decide_comment(issue, comment, now), dry_run)
 
 
+def on_pull_request(gh, repo: str, event: dict, now: datetime, dry_run: bool = False) -> bool:
+    """Check untrusted PR data without executing anything from its branch."""
+    if event.get("action") not in {
+        "opened",
+        "edited",
+        "synchronize",
+        "ready_for_review",
+        "reopened",
+    }:
+        return
+    pr = event["pull_request"]
+    if pr.get("state", "open") != "open":
+        return
+    reasons = pr_claims.conflicts(gh, repo, pr)
+    current = gh.issue(repo, pr["number"])
+    actions = []
+    if reasons:
+        if pr_claims.LABEL not in current.labels:
+            actions.append(("label_add", pr_claims.LABEL))
+        if not any(c.body.startswith(pr_claims.MARKER) for c in current.comments):
+            actions.append(
+                (
+                    "comment",
+                    pr_claims.MARKER
+                    + "\nClaim conflict: keep this PR out of the merge queue until resolved.\n\n"
+                    + "\n".join("- " + reason for reason in reasons),
+                )
+            )
+    elif pr_claims.LABEL in current.labels:
+        actions.append(("label_remove", pr_claims.LABEL))
+    apply(gh, repo, pr["number"], actions, dry_run)
+    return not reasons
+
+
 def sweep(gh, repo: str, now: datetime, dry_run: bool = False) -> None:
     for number in gh.claimed_issues(repo):
         apply(gh, repo, number, claims.decide_sweep(gh.issue(repo, number), now), dry_run)
@@ -87,19 +121,25 @@ def backend(sim: str | None):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["auto", "comment", "sweep"])
+    ap.add_argument("mode", choices=["auto", "comment", "pr", "sweep"])
     ap.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     ap.add_argument("--org", help="sweep every repo of this org (repos with no caller)")
     ap.add_argument("--sim", help="SQLite world to run against instead of GitHub")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     if args.mode == "auto":
-        args.mode = "comment" if os.environ.get("GITHUB_EVENT_NAME") == "issue_comment" else "sweep"
+        args.mode = {"issue_comment": "comment", "pull_request": "pr"}.get(
+            os.environ.get("GITHUB_EVENT_NAME"), "sweep"
+        )
     gh = backend(args.sim)
     now = gh.now if args.sim else datetime.now(timezone.utc)
-    if args.mode == "comment":
+    if args.mode in {"comment", "pr"}:
         with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:
-            on_comment(gh, args.repo, json.load(f), now, args.dry_run)
+            result = (on_comment if args.mode == "comment" else on_pull_request)(
+                gh, args.repo, json.load(f), now, args.dry_run
+            )
+        if args.mode == "pr" and result is False:
+            return 1
     elif args.org:
         # Repos without a claim-bot caller get claims handled here, on the
         # coordinator's tick; repos with one see only no-op replays.

@@ -78,6 +78,8 @@ name: Claim bot
 on:
   issue_comment:
     types: [created]
+  pull_request:
+    types: [opened, edited, synchronize, ready_for_review, reopened]
   schedule:
     - cron: "23 * * * *"
   workflow_dispatch:
@@ -90,6 +92,24 @@ jobs:
 ```
 
 ## Roles
+
+Before opening a PR and again before enabling auto-merge, workers re-read
+all issues the PR promises to close, including their latest claim comments.
+Each must be open, Ready (or P0), and actively claimed by the PR author, with
+an accepted `Claiming:` comment on that exact issue. An assignee alone is
+insufficient when multiple sessions share an account. Use `Refs` for partial
+work and resolve duplicate/closed-issue references before continuing.
+
+The reusable claim bot handles PR opened/edited/synchronize/ready-for-review
+and reopened events. A closing reference to a closed, unready, unclaimed or
+conflicting issue fails that job, adds `claim-conflict`, and posts one comment.
+Correct the body or issue state and synchronize/reopen the PR to recheck; a
+successful recheck clears the label. Documentation-only and CI/test-only path
+changes are exempt. `Refs` does not promise closure and is not checked.
+The coordinator also rechecks live issue state before recommending enqueue,
+so a closure or reassignment after the PR event cannot silently pass.
+Callers must subscribe to the PR events above; a caller that only subscribes
+to issue comments still gets issue claims, but no PR event check.
 
 **Workers** take a Ready issue, claim it, open a PR (a draft as soon as RED
 exists), get it green and into the merge queue, then **stop and move on**.
