@@ -28,9 +28,10 @@ class ThinWorkflowTest(unittest.TestCase):
             self.assertNotRegex(wf.read_text(), r"\$\{\{\s*github\.event\.comment", wf.name)
             self.assertNotIn("pull_request_target", wf.read_text(), wf.name)
 
-    def test_claim_bot_can_write_issues_only(self):
+    def test_claim_bot_can_label_issues_and_pull_requests(self):
         text = (ROOT / ".github" / "workflows" / "claim-bot.yml").read_text()
         self.assertIn("issues: write", text)
+        self.assertIn("pull-requests: read", text)
         self.assertNotIn("contents: write", text)
         self.assertIn("workflow_call", text)
         self.assertIn("pull_request:", text)
