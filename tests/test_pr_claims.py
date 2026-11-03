@@ -1,7 +1,7 @@
 """PR claim validation through the same backend as issue-comment events."""
 
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from workflow import claim_bot, coordinator
 from workflow.sim import World
@@ -84,7 +84,10 @@ class PullRequestClaims(unittest.TestCase):
         self.assertNotIn("claim-conflict", self.w.labels(R, pr))
 
     def test_only_docs_and_ci_paths_are_exempt(self):
-        for files in (["docs/guide.md"], ["ci/check.py", ".github/workflows/existing.yml"]):
+        for files in (
+            ["docs/guide.md"],
+            ["ci/check.py", ".github/workflows/existing.yml", "ci.toml"],
+        ):
             with self.subTest(files=files):
                 self.w.gh.pr_files.return_value = files
                 issue = self.w.open_issue(R)
@@ -132,3 +135,51 @@ class PullRequestClaims(unittest.TestCase):
         self.w.gh.apply_issue(R, issue, ("unassign", "bob"))
         self.w.gh.apply_issue(R, issue, ("assign", "alice"))
         self.assertFalse(self.check(self.event(f"Fixes #{issue}")))
+
+
+class RestClaimActions(unittest.TestCase):
+    def test_pr_label_add_uses_the_issues_rest_permission(self):
+        from workflow.gh import GhBackend
+
+        with patch("workflow.gh.run", return_value="") as run:
+            GhBackend().apply_issue("obs-rust/obs-studio", 3519, ("label_add", "claim-conflict"))
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                "gh",
+                "api",
+                "-X",
+                "POST",
+                "repos/obs-rust/obs-studio/issues/3519/labels",
+                "-f",
+                "labels[]=claim-conflict",
+            ],
+        )
+
+    def test_pr_comment_uses_the_issues_rest_permission(self):
+        from workflow.gh import GhBackend
+
+        with patch("workflow.gh.run", return_value="") as run:
+            GhBackend().apply_issue("obs-rust/obs-studio", 3519, ("comment", "one\ntwo"))
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                "gh",
+                "api",
+                "-X",
+                "POST",
+                "repos/obs-rust/obs-studio/issues/3519/comments",
+                "-f",
+                "body=one\ntwo",
+            ],
+        )
+
+    def test_label_remove_encodes_its_path_component(self):
+        from workflow.gh import GhBackend
+
+        with patch("workflow.gh.run", return_value="") as run:
+            GhBackend().apply_issue("obs-rust/obs-studio", 3519, ("label_remove", "a/b c"))
+        self.assertEqual(
+            run.call_args.args[0],
+            ["gh", "api", "-X", "DELETE", "repos/obs-rust/obs-studio/issues/3519/labels/a%2Fb%20c"],
+        )
