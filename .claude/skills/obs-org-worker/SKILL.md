@@ -83,6 +83,13 @@ red=$(git commit-tree $(git write-tree) -p origin/master -m "test: ... (RED)")
 git push origin $green:refs/heads/<branch>
 ```
 
+Immediately before opening a PR, re-read every issue it closes and the
+latest claim comments. Each must still be open, Ready (or P0), and claimed
+by you with an accepted `Claiming:` comment on that issue. Repeat this check
+before auto-merge; if another claim or a duplicate closure intervened, stop
+queueing and resolve the references with the claimant. An account's assignee
+alone does not distinguish sessions sharing that account.
+
 RED then GREEN: a failing test (or, with no harness, an exact reproduction)
 first, then the fix. A repo whose CI never compiles the change (obs-browser:
 clang-format only) gets a line in the PR saying what was and wasn't built. Open the PR as a draft as soon as RED exists, with

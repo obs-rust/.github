@@ -6,6 +6,10 @@ name: claim-bot
 # The comment body is read from the event file, never interpolated here.
 
 on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, edited, synchronize, ready_for_review, reopened]
   workflow_call:
 
 permissions:

@@ -98,7 +98,14 @@ class SimBackend:
             self.db.commit()
 
     def node(self, repo: str, number: int) -> str:
-        return self.q("SELECT id FROM items WHERE repo=? AND number=?", repo, number)[0][0]
+        rows = self.q("SELECT id FROM items WHERE repo=? AND number=?", repo, number)
+        if not rows:
+            rows = self.q(
+                "SELECT id FROM items WHERE repo=? AND number=?",
+                repo.removeprefix(ORG + "/"),
+                number,
+            )
+        return rows[0][0]
 
     def log(self, actor: str, what: str) -> None:
         self.x("INSERT INTO log VALUES (?,?,?)", iso(self.now), actor, what)
@@ -148,6 +155,22 @@ class SimBackend:
             self._open_blockers(item),
             self.q("SELECT state FROM items WHERE id=?", item)[0][0] != "OPEN",
         )
+
+    def pr_files(self, repo: str, number: int) -> list[str]:
+        # A normal code PR. Tests override this to exercise exemptions.
+        return ["src/main.rs"]
+
+    def pull_request(self, repo: str, number: int) -> dict:
+        item = self.node(repo, number)
+        author = self.q("SELECT author FROM items WHERE id=?", item)[0][0]
+        refs = self.q(
+            "SELECT number FROM closes JOIN items ON items.id=closes.issue WHERE pr=?", item
+        )
+        return {
+            "number": number,
+            "user": {"login": author},
+            "body": "\n".join(f"Fixes #{n}" for (n,) in refs),
+        }
 
     def _labels(self, item: str) -> set[str]:
         return {n for (n,) in self.q("SELECT name FROM labels WHERE item=?", item)}

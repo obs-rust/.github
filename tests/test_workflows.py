@@ -33,6 +33,8 @@ class ThinWorkflowTest(unittest.TestCase):
         self.assertIn("issues: write", text)
         self.assertNotIn("contents: write", text)
         self.assertIn("workflow_call", text)
+        self.assertIn("pull_request:", text)
+        self.assertIn("types: [opened, edited, synchronize, ready_for_review, reopened]", text)
 
     def test_board_sync_runs_tests_before_syncing(self):
         text = (ROOT / ".github" / "workflows" / "board-sync.yml").read_text()

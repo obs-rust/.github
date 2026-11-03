@@ -354,6 +354,8 @@ class OrderAndReport(Case):
         self.assertEqual(at(R, n), ["fix-ci"])
 
     def test_full_order(self):
+        conflict = self.w.open_pr(R, "alice")
+        self.w.label(R, conflict, "claim-conflict")
         self.w.master(R, red=True)
         self.w.open_issue(R, labels={"human-review-needed"})
         inv = self.w.open_issue(R, labels={"needs-investigation"})

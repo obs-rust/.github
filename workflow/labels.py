@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 LABELS = {
+    "claim-conflict": ("b60205", "A PR closing reference conflicts with the issue claim"),
     "ready": ("0e8a16", "Meets the definition of Ready; claimable"),
     "needs-investigation": ("fbca04", "Underdefined: research before it can be Ready"),
     "claim-blocked": ("d4c5f9", "The claimant waits on something outside their control"),
