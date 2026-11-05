@@ -17,6 +17,7 @@ reads, so every rule is tested in simulation (tests/test_coordinator.py).
 
 Order, most urgent first:
   fix-master     the default branch is red: fix it before queuing anything
+  rerun-master   the default branch's push failed only on jobs with no runner
   requeue        a PR left the merge queue with a conflict: rebase, re-queue
   fix-ci         a ready PR's checks fail: rerun a flake, fix a mechanical
                  failure, or comment the cause for the author
@@ -51,6 +52,7 @@ from workflow.model import Item
 
 ORDER = [
     "fix-master",
+    "rerun-master",
     "claim-conflict",
     "requeue",
     "fix-ci",
@@ -73,6 +75,10 @@ HOW = {
     "and fix or revert it first. Queued PRs fail until it is green. A failure only an "
     "admin can fix (token, secret, branch rule): open or update one `human-review-needed` "
     "issue in that repo with the log line, and report it.",
+    "rerun-master": "Every failed job of this push run got no runner (`cancelled`, no steps), "
+    "so no PR broke it and `--log-failed` is empty. Do not look for a culprit, revert or "
+    "escalate: `gh run rerun <run> -R obs-rust/<repo> --failed`. Rerun it once per tick; "
+    "during a GitHub incident, rerun it after the incident ends.",
     "requeue": "UNMERGEABLE in the queue: read its merge-group run; a semantic clash "
     "with master (a new lint, a renamed helper) needs a fixup: dequeue, push, `--auto`. "
     "The queue ejected it (or it conflicts): rebase on the default branch, "
@@ -180,11 +186,20 @@ def issue_task(item: Item, now: datetime) -> str | None:
 
 
 def tasks(
-    items: list[Item], red: list[str], now: datetime, held: dict[str, str] | None = None
+    items: list[Item],
+    red: list[str],
+    now: datetime,
+    held: dict[str, str] | None = None,
+    no_runner: dict[str, int] | None = None,
 ) -> list[Task]:
-    """The work list, leaving out tasks another coordinator holds."""
+    """The work list, leaving out tasks another coordinator holds. `no_runner`
+    maps a repo to its push run that failed only on jobs with no runner."""
     held = held or {}
     out = [Task("fix-master", repo, 0, "default branch is red", 0.0) for repo in red]
+    out += [
+        Task("rerun-master", repo, 0, f"push run {run} failed only on jobs with no runner", 0.0)
+        for repo, run in (no_runner or {}).items()
+    ]
     for item in items:
         if item.state != "OPEN":
             continue
@@ -197,12 +212,21 @@ def tasks(
     return sorted(out, key=lambda t: t.rank)
 
 
-def report(work: list[Task], per_kind: int = 15) -> str:
-    """The list for a human or an agent: each kind with its instructions,
-    oldest first, at most `per_kind` lines each."""
+def incident_lines(incidents: list[str] | None) -> list[str]:
+    """GitHub's unresolved incidents; None means the read failed."""
+    if incidents is None:
+        return ["GitHub status: could not read it, see https://www.githubstatus.com"]
+    if not incidents:
+        return []
+    return ["## GitHub incidents", *(f"- {i}" for i in incidents)]
+
+
+def report(work: list[Task], per_kind: int = 15, incidents: list[str] | None = ()) -> str:
+    """The list for a human or an agent: GitHub's incidents, then each kind
+    with its instructions, oldest first, at most `per_kind` lines each."""
+    lines = incident_lines(incidents)
     if not work:
-        return "quiet: nothing to do"
-    lines: list[str] = []
+        return "\n".join([*lines, "", "quiet: nothing to do"]).strip()
     for kind in ORDER:
         mine = [t for t in work if t.kind == kind]
         if not mine:
@@ -267,8 +291,14 @@ def main() -> int:
             repo = item.repo if "/" in item.repo else f"{args.org}/{item.repo}"
             if pr_claims.conflicts(gh, repo, gh.pull_request(repo, item.number)):
                 item.labels.add(pr_claims.LABEL)
-    work = tasks(items, gh.red_branches(args.org), now, held)
-    print(json.dumps([asdict(t) for t in work], indent=1) if args.json else report(work))
+    work = tasks(items, gh.red_branches(args.org), now, held, gh.no_runner_runs(args.org))
+    incidents = gh.incidents()
+    if args.json:
+        for line in incident_lines(incidents):
+            print(line, file=sys.stderr)
+        print(json.dumps([asdict(t) for t in work], indent=1))
+    else:
+        print(report(work, incidents=incidents))
     return 0
 
 

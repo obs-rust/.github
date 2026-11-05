@@ -469,6 +469,7 @@ class OrderAndReport(Case):
         self.assertEqual(at(R, n), ["fix-ci"])
 
     def test_full_order(self):
+        self.w.no_runner_push("obs-rust/obs-deps", run=1)
         conflict = self.w.open_pr(R, "alice")
         self.w.label(R, conflict, "claim-conflict")
         self.w.master(R, red=True)
