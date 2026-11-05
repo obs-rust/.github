@@ -7,11 +7,14 @@ coordinator's list is wrong, work piles up unseen, so every rule is here.
 
 from __future__ import annotations
 
+import io
+import json
 import tempfile
 import unittest
 from datetime import timedelta
 
 from workflow import coordinator
+from workflow.gh import github_incidents, only_no_runner
 from workflow.sim import World
 
 R = "obs-studio"
@@ -24,7 +27,10 @@ class Case(unittest.TestCase):
 
     def work(self):
         return coordinator.tasks(
-            self.w.gh.items("obs-rust"), self.w.gh.red_branches("obs-rust"), self.w.now
+            self.w.gh.items("obs-rust"),
+            self.w.gh.red_branches("obs-rust"),
+            self.w.now,
+            no_runner=self.w.gh.no_runner_runs("obs-rust"),
         )
 
     def kinds(self, number=None):
@@ -329,6 +335,115 @@ class IssueTasks(Case):
         self.assertEqual(self.kinds(n), [])
 
 
+def no_runner_job(name="macos"):
+    # As GitHub reports it: "The job was not acquired by Runner of type hosted".
+    return {"name": name, "conclusion": "cancelled", "runner_id": 0, "runner_name": "", "steps": []}
+
+
+def passed_job(name="linux"):
+    return {
+        "name": name,
+        "conclusion": "success",
+        "runner_id": 7,
+        "runner_name": "GitHub Actions 7",
+        "steps": [{"name": "build"}],
+    }
+
+
+class NoRunnerPush(Case):
+    """obs-rust/.github#29: four master pushes in a row were red on 2026-11-04
+    only because macOS jobs got no runner. No PR broke them, the failed-job log
+    was empty, and every other repo's fix-ci stayed hidden behind fix-master."""
+
+    def test_gives_a_rerun_task_and_no_fix_master(self):
+        self.w.no_runner_push(R, run=41874818392)
+        work = self.work()
+        self.assertEqual([t.kind for t in work], ["rerun-master"])
+        self.assertIn("41874818392", work[0].title)
+
+    def test_keeps_fix_ci_on_the_list(self):
+        n = self.w.open_pr(R, "alice")
+        self.w.ci(R, n, passed=False)
+        self.w.no_runner_push(R, run=1)
+        self.assertEqual(self.kinds(n), ["fix-ci"])
+        self.assertIn("rerun-master", self.kinds())
+
+    def test_a_green_push_clears_it(self):
+        self.w.no_runner_push(R, run=1)
+        self.w.master(R, red=False)
+        self.assertEqual(self.kinds(), [])
+
+    def test_report_says_how(self):
+        self.w.no_runner_push(R, run=1)
+        text = coordinator.report(self.work())
+        self.assertIn("## rerun-master (1)", text)
+        self.assertIn("gh run rerun", text)
+
+
+class NoRunnerClassification(unittest.TestCase):
+    def test_only_no_runner_jobs(self):
+        self.assertTrue(only_no_runner([passed_job(), no_runner_job(), no_runner_job("swift")]))
+
+    def test_one_job_that_ran_and_failed_stays_red(self):
+        failed = {**passed_job("cross"), "conclusion": "failure"}
+        self.assertFalse(only_no_runner([no_runner_job(), failed]))
+
+    def test_a_cancelled_job_that_had_a_runner_stays_red(self):
+        cancelled = {**passed_job("cross"), "conclusion": "cancelled"}
+        self.assertFalse(only_no_runner([cancelled]))
+
+    def test_a_cancelled_job_with_steps_stays_red(self):
+        self.assertFalse(only_no_runner([{**no_runner_job(), "steps": [{"name": "build"}]}]))
+
+    def test_no_failed_job_is_not_this_case(self):
+        self.assertFalse(only_no_runner([passed_job()]))
+        self.assertFalse(only_no_runner([]))
+
+
+class GitHubIncidents(Case):
+    def test_incident_prints_at_the_top(self):
+        self.green_pr()
+        text = coordinator.report(self.work(), incidents=["Actions degraded (investigating)"])
+        self.assertTrue(text.startswith("## GitHub incidents"), text)
+        self.assertIn("- Actions degraded (investigating)", text)
+
+    def test_incident_prints_on_a_quiet_list(self):
+        text = coordinator.report([], incidents=["Actions degraded (investigating)"])
+        self.assertTrue(text.startswith("## GitHub incidents"), text)
+        self.assertIn("quiet: nothing to do", text)
+
+    def test_failed_read_does_not_stop_the_list(self):
+        self.green_pr()
+        text = coordinator.report(self.work(), incidents=None)
+        self.assertIn("could not read", text)
+        self.assertIn("## enqueue (1)", text)
+
+    def test_no_incident_adds_nothing(self):
+        self.assertEqual(coordinator.report([], incidents=[]), "quiet: nothing to do")
+
+    def test_read_failure_gives_none(self):
+        def broken(url, timeout):
+            raise OSError("no route")
+
+        self.assertIsNone(github_incidents(broken))
+
+    def test_read_formats_each_incident(self):
+        body = io.BytesIO(
+            json.dumps(
+                {"incidents": [{"name": "Actions degraded", "status": "investigating"}]}
+            ).encode()
+        )
+        self.assertEqual(
+            github_incidents(lambda url, timeout: body), ["Actions degraded (investigating)"]
+        )
+
+    def test_a_malformed_reply_gives_none(self):
+        self.assertIsNone(github_incidents(lambda url, timeout: io.BytesIO(b"<html>")))
+
+    def test_sim_reads_no_status(self):
+        self.assertEqual(self.w.gh.incidents(), [])
+
+
 class OrderAndReport(Case):
     def test_red_master_comes_first(self):
         self.green_pr()
@@ -354,6 +469,7 @@ class OrderAndReport(Case):
         self.assertEqual(at(R, n), ["fix-ci"])
 
     def test_full_order(self):
+        self.w.no_runner_push("obs-rust/obs-deps", run=1)
         conflict = self.w.open_pr(R, "alice")
         self.w.label(R, conflict, "claim-conflict")
         self.w.master(R, red=True)

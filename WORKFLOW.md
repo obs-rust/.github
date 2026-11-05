@@ -119,7 +119,7 @@ Ejections, rebases and CI repairs after that are the coordinator's.
 every tick and clears the list top to bottom. Each kind comes with its
 instructions:
 
-`fix-master` → `requeue` → `fix-ci` → `enqueue` → `rebase` → `review` →
+`fix-master` → `rerun-master` → `requeue` → `fix-ci` → `enqueue` → `rebase` → `review` →
 `decide` → `triage` → `stalled` → `investigating` → `escalated`
 
 Several coordinators can run at once. Before acting on a task:

@@ -52,6 +52,7 @@ coordinator holds, and orders them:
 | Kind | What it means | What you do |
 |---|---|---|
 | `fix-master` | a default branch's last push run failed (its PRs' `fix-ci` tasks are hidden until it is green) | find the PR that broke it; fix or revert first. Queued PRs fail until it is green. Needs an admin (token, secret, rule)? One `human-review-needed` issue with the log line |
+| `rerun-master` | a default branch's last push run failed only on jobs that got no runner (its PRs' `fix-ci` tasks stay on the list) | no PR broke it and the log is empty: `gh run rerun <run> -R <repo> --failed`. Do not revert or escalate |
 | `requeue` | a green PR now conflicts (ejected from the queue) | rebase, keep both sides of list conflicts, `--force-with-lease`, `gh pr merge --auto` |
 | `fix-ci` | a PR's checks fail | §3 |
 | `enqueue` | green and mergeable, not queued | `gh pr merge <N> -R <repo> --auto`, then confirm (gh pr view has no queue field): `gh api graphql -f query='{repository(owner:"obs-rust",name:"<repo>"){pullRequest(number:<N>){isInMergeQueue}}}'` |
@@ -105,6 +106,10 @@ already be caught by the local gate, so this is the exception path:
 1. Read the failed job log (`gh run view <run> --log-failed`).
 2. **Flake** (timeout, runner died, network, a timing test the diff doesn't
    touch that passed in the sibling job): `gh run rerun <run> --failed`.
+   **A job with no runner** is one too: `cancelled`, no steps, "not acquired by
+   Runner of type hosted", and `--log-failed` returns nothing. Rerun it. During
+   a GitHub incident (the work list prints them first), do not revert or
+   escalate.
 3. **Mechanical** (lint, format, a test count, a features-ledger line, a
    stale reference): push a `fixup:` commit and say so in a comment.
 4. **Master was red**: fix master first (`fix-master`); re-queuing only

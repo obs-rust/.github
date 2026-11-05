@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS board_values (content TEXT, field TEXT, value TEXT,
   UNIQUE(content, field));
 CREATE TABLE IF NOT EXISTS log (at TEXT, actor TEXT, what TEXT);
 CREATE TABLE IF NOT EXISTS red (repo TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS no_runner (repo TEXT PRIMARY KEY, run INTEGER);
 CREATE TABLE IF NOT EXISTS noqueue (repo TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS qstate (item TEXT PRIMARY KEY, state TEXT);
 CREATE TABLE IF NOT EXISTS leases (key TEXT PRIMARY KEY, owner TEXT, at TEXT);
@@ -323,6 +324,12 @@ class SimBackend:
     def red_branches(self, org: str) -> list[str]:
         return [r for (r,) in self.q("SELECT repo FROM red")]
 
+    def no_runner_runs(self, org: str) -> dict[str, int]:
+        return {repo: run for repo, run in self.q("SELECT repo, run FROM no_runner")}
+
+    def incidents(self) -> list[str] | None:
+        return []  # a simulated GitHub has no status page to read
+
     def board(self, org: str, number: int) -> Board:
         fields = {}
         for name, kind, options in self.q("SELECT name, type, options FROM fields"):
@@ -494,8 +501,13 @@ class World:
 
     def master(self, repo: str, red: bool) -> None:
         self.gh.x("DELETE FROM red WHERE repo=?", repo)
+        self.gh.x("DELETE FROM no_runner WHERE repo=?", repo)
         if red:
             self.gh.x("INSERT INTO red VALUES (?)", repo)
+
+    def no_runner_push(self, repo: str, run: int) -> None:
+        self.master(repo, red=False)
+        self.gh.x("INSERT INTO no_runner VALUES (?, ?)", repo, run)
 
     def ready_for_review(self, repo: str, pr: int) -> None:
         self.gh.x("UPDATE items SET draft=0 WHERE id=?", self.gh.node(repo, pr))

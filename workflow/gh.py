@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+import urllib.request
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -53,6 +55,32 @@ def graphql(query: str, **variables: Any) -> dict[str, Any]:
         flag = "-F" if isinstance(value, int) else "-f"
         args += [flag, f"{key}={value}"]
     return json.loads(run(args))["data"]
+
+
+def only_no_runner(jobs: list[dict]) -> bool:
+    """Every job that did not pass got no runner: `cancelled`, no runner and
+    no steps, as GitHub reports "The job was not acquired by Runner of type
+    hosted even after multiple attempts". Any other failed job is a real
+    failure (obs-rust/.github#29)."""
+    failed = [j for j in jobs if j.get("conclusion") not in ("success", "skipped", "neutral")]
+    return bool(failed) and all(
+        j.get("conclusion") == "cancelled" and not j.get("runner_id") and not j.get("steps")
+        for j in failed
+    )
+
+
+INCIDENTS_URL = "https://www.githubstatus.com/api/v2/incidents/unresolved.json"
+INCIDENTS_TIMEOUT = 5  # seconds; the work list must not wait on a status page
+
+
+def github_incidents(fetch: Callable[..., Any] = urllib.request.urlopen) -> list[str] | None:
+    """GitHub's unresolved incidents, or None when they cannot be read."""
+    try:
+        with fetch(INCIDENTS_URL, timeout=INCIDENTS_TIMEOUT) as reply:
+            incidents = json.load(reply)["incidents"]
+        return [f"{i['name']} ({i['status']})" for i in incidents]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 LEASE_REPO = "obs-rust/.github"
@@ -409,12 +437,15 @@ class GhBackend:
             failed += state in ("failure", "error")
         return passed, failed, pending
 
-    def red_branches(self, org: str) -> list[str]:
-        """Repos whose latest finished push run on the default branch, in the
-        last RED_DAYS, failed. Older failures are dormant copies of upstream
-        repos, not a master anyone is merging into."""
+    def _failed_pushes(self, org: str) -> dict[str, dict]:
+        """Each repo's latest finished push run on the default branch, if it
+        failed in the last RED_DAYS. Older failures are dormant copies of
+        upstream repos, not a master anyone is merging into."""
+        cached = getattr(self, "_failed_pushes_cache", None)
+        if cached is not None:
+            return cached
 
-        def red(repo: str) -> bool:
+        def failed(repo: str) -> dict | None:
             meta = rest(f"repos/{org}/{repo}", paginate=False)
             runs = rest(
                 f"repos/{org}/{repo}/actions/runs?branch={meta['default_branch']}"
@@ -423,13 +454,41 @@ class GhBackend:
             )
             latest = runs.get("workflow_runs") or []
             if not latest or latest[0]["conclusion"] != "failure":
-                return False
+                return None
             age = datetime.now(timezone.utc) - ts(latest[0]["created_at"])
-            return age < timedelta(days=RED_DAYS)
+            return latest[0] if age < timedelta(days=RED_DAYS) else None
+
+        def jobs(repo: str, run: dict) -> list[dict]:
+            page = rest(
+                f"repos/{org}/{repo}/actions/runs/{run['id']}/jobs?per_page=100", paginate=False
+            )
+            # More jobs than one page: not all seen, so it stays a red master.
+            return page["jobs"] if page["total_count"] <= len(page["jobs"]) else []
 
         repos = self._repos(org)
         with ThreadPoolExecutor(READ_WORKERS) as pool:
-            return [r for r, bad in zip(repos, pool.map(red, repos)) if bad]
+            runs = {r: run for r, run in zip(repos, pool.map(failed, repos)) if run}
+            for (repo, run), run_jobs in zip(
+                runs.items(), pool.map(lambda kv: jobs(*kv), runs.items())
+            ):
+                run["only_no_runner"] = only_no_runner(run_jobs)
+        self._failed_pushes_cache = runs
+        return runs
+
+    def red_branches(self, org: str) -> list[str]:
+        """Repos whose latest push run failed, except a run that only lacked a
+        runner: no PR broke that one (no_runner_runs)."""
+        return [r for r, run in self._failed_pushes(org).items() if not run["only_no_runner"]]
+
+    def no_runner_runs(self, org: str) -> dict[str, int]:
+        """Repo to run id, for a latest push run that failed only because jobs
+        got no runner."""
+        return {
+            r: run["id"] for r, run in self._failed_pushes(org).items() if run["only_no_runner"]
+        }
+
+    def incidents(self) -> list[str] | None:
+        return github_incidents()
 
     def board(self, org: str, number: int) -> Board:
         item_ids: dict[str, str] = {}
