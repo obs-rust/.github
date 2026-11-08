@@ -31,7 +31,11 @@ class ThinWorkflowTest(unittest.TestCase):
     def test_claim_bot_can_label_issues_and_pull_requests(self):
         text = (ROOT / ".github" / "workflows" / "claim-bot.yml").read_text()
         self.assertIn("issues: write", text)
-        self.assertIn("pull-requests: read", text)
+        # Label writes on a pull request are checked against pull-requests:
+        # write, not issues: write -- with `read` every label_add 403s on a PR
+        # and the claim check fails with a traceback instead of a label.
+        self.assertIn("pull-requests: write", text)
+        self.assertNotIn("pull-requests: read", text)
         self.assertNotIn("contents: write", text)
         self.assertIn("workflow_call", text)
         self.assertIn("pull_request:", text)

@@ -19,7 +19,7 @@ import sys
 from datetime import datetime, timezone
 
 from workflow import claims, log, pr_claims
-from workflow.gh import ts
+from workflow.gh import GhError, ts
 from workflow.model import Comment
 
 
@@ -86,7 +86,13 @@ def on_pull_request(gh, repo: str, event: dict, now: datetime, dry_run: bool = F
             )
     elif pr_claims.LABEL in current.labels:
         actions.append(("label_remove", pr_claims.LABEL))
-    apply(gh, repo, pr["number"], actions, dry_run)
+    for action in actions:
+        try:
+            apply(gh, repo, pr["number"], [action], dry_run)
+        except GhError as error:
+            if action[0] not in {"label_add", "label_remove", "comment", "react"}:
+                raise
+            log(f"::warning::{repo}#{pr['number']}: {action[0]} failed: {error}")
     return not reasons
 
 

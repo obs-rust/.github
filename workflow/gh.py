@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import time
 import urllib.request
@@ -27,18 +28,68 @@ def ts(s: str | None) -> datetime | None:
     return datetime.fromisoformat(s.replace("Z", "+00:00")) if s else None
 
 
+class GhError(RuntimeError):
+    """A failed gh operation, including its endpoint and HTTP status if available."""
+
+    def __init__(self, method: str, path: str, status: int | None, detail: str):
+        self.method = method
+        self.path = path
+        self.status = status
+        super().__init__(f"gh kept failing: {method} {path} -> HTTP {status}: {detail}")
+
+
 def run(args: list[str]) -> str:
-    """Run gh, retrying with backoff: secondary rate limits and 502s are
-    common on bursts of calls."""
+    """Retry transient failures; deterministic client errors fail immediately."""
+    method = "GET"
+    explicit_method = False
+    path = " ".join(args[1:4])
+    if args[1:2] == ["api"]:
+        positional = []
+        flags = iter(args[2:])
+        for arg in flags:
+            if arg in {"-X", "--method"}:
+                method = next(flags)
+                explicit_method = True
+            elif arg in {
+                "-H",
+                "--header",
+                "-f",
+                "--raw-field",
+                "-F",
+                "--field",
+                "--input",
+                "--jq",
+                "-q",
+                "--template",
+                "-t",
+                "--cache",
+                "--hostname",
+            }:
+                next(flags)
+            elif not arg.startswith("-"):
+                positional.append(arg)
+        if positional:
+            path = positional[0]
+        if not explicit_method and any(
+            arg in args for arg in ("-f", "-F", "--field", "--raw-field")
+        ):
+            method = "POST"
+    else:
+        method = "CLI"
     for attempt in range(4):
         proc = subprocess.run(args, capture_output=True, text=True)
         if proc.returncode == 0:
             return proc.stdout
+        match = re.search(r"HTTP (\d{3})", proc.stderr)
+        status = int(match[1]) if match else None
+        detail = proc.stderr.strip().splitlines()
+        error = GhError(method, path, status, detail[-1] if detail else "gh exited without stderr")
+        if (status is not None and 400 <= status < 500 and status != 429) or attempt == 3:
+            raise error
         print(f"gh failed (try {attempt + 1}): {proc.stderr.strip()}")
-        # A rate limit clears in about a minute; other failures retry sooner.
-        limited = "rate limit" in proc.stderr.lower()
+        limited = status == 429 or "rate limit" in proc.stderr.lower()
         time.sleep((60 if limited else 5) * 2**attempt)
-    raise RuntimeError(f"gh kept failing: {' '.join(args[:4])}")
+    raise error
 
 
 def rest(path: str, paginate: bool = True) -> Any:
@@ -178,8 +229,7 @@ class GhBackend:
         kind, arg = action
         base = ["gh", "issue", "edit", str(number), "--repo", repo]
         cmd = {
-            # REST accepts issues:write for PR labels too; gh issue edit
-            # selects GraphQL, which instead requires pull-requests:write.
+            # PR label writes require pull-requests:write even on the issues REST endpoint.
             "label_add": [
                 "gh",
                 "api",
