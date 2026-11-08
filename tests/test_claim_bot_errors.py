@@ -38,6 +38,7 @@ class ClaimWriteErrors(unittest.TestCase):
                 patch.object(claim_bot, "backend", return_value=backend),
                 patch.object(claim_bot.pr_claims, "conflicts", return_value=reasons),
                 contextlib.redirect_stdout(output),
+                patch.object(claim_bot, "log", side_effect=print),
             ):
                 result = claim_bot.main()
         self.assertIn("::warning::", output.getvalue())
@@ -60,9 +61,14 @@ class ClaimWriteErrors(unittest.TestCase):
         for status in (400, 401, 403, 404, 422):
             with (
                 self.subTest(status=status),
-                patch.object(gh.subprocess, "run", return_value=SimpleNamespace(
-                    returncode=1, stderr=f"gh: Resource not accessible by integration (HTTP {status})"
-                )) as run,
+                patch.object(
+                    gh.subprocess,
+                    "run",
+                    return_value=SimpleNamespace(
+                        returncode=1,
+                        stderr=f"gh: Resource not accessible by integration (HTTP {status})",
+                    ),
+                ) as run,
                 patch.object(gh.time, "sleep") as sleep,
             ):
                 with self.assertRaises(gh.GhError) as caught:
@@ -77,10 +83,16 @@ class ClaimWriteErrors(unittest.TestCase):
         backend = Mock()
         backend.issue.return_value = SimpleNamespace(comments=[])
         backend.apply_issue.side_effect = gh.GhError("CLI", "issue edit", 403, "denied")
-        event = {"issue": {"number": 1}, "comment": {
-            "user": {"login": "alice"}, "author_association": "CONTRIBUTOR",
-            "body": "Claiming: fix", "created_at": "2026-11-07T00:00:00Z", "id": 1,
-        }}
+        event = {
+            "issue": {"number": 1},
+            "comment": {
+                "user": {"login": "alice"},
+                "author_association": "CONTRIBUTOR",
+                "body": "Claiming: fix",
+                "created_at": "2026-11-07T00:00:00Z",
+                "id": 1,
+            },
+        }
         with (
             patch.object(claim_bot.claims, "handles", return_value=True),
             patch.object(claim_bot.claims, "decide_comment", return_value=[("assign", "alice")]),
@@ -88,3 +100,45 @@ class ClaimWriteErrors(unittest.TestCase):
         ):
             claim_bot.on_comment(backend, "obs-rust/obs-studio", event, None)
         self.assertEqual(backend.apply_issue.call_count, 1)
+
+
+class GhRetries(unittest.TestCase):
+    def test_transient_statuses_retry_four_times(self):
+        for status in (429, 502):
+            with (
+                self.subTest(status=status),
+                patch.object(
+                    gh.subprocess,
+                    "run",
+                    return_value=SimpleNamespace(
+                        returncode=1, stderr=f"gh: unavailable (HTTP {status})"
+                    ),
+                ) as run,
+                patch.object(gh.time, "sleep") as sleep,
+            ):
+                with self.assertRaises(gh.GhError):
+                    gh.run(
+                        [
+                            "gh",
+                            "api",
+                            "--paginate",
+                            "--slurp",
+                            "-H",
+                            "Accept: application/json",
+                            "repos/o/r/issues",
+                        ]
+                    )
+                self.assertEqual(run.call_count, 4)
+                self.assertEqual(sleep.call_count, 3)
+
+    def test_read_endpoint_survives_header_and_pagination_flags(self):
+        with patch.object(
+            gh.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=1, stderr="gh: denied (HTTP 403)"),
+        ) as run:
+            with self.assertRaises(gh.GhError) as caught:
+                gh.rest("repos/o/r/issues")
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(caught.exception.method, "GET")
+        self.assertEqual(caught.exception.path, "repos/o/r/issues")
