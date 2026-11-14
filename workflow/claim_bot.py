@@ -53,7 +53,10 @@ def on_comment(gh, repo: str, event: dict, now: datetime, dry_run: bool = False)
     issue = gh.issue(repo, number)
     # The new comment is already in the history; decide as of just before it.
     issue.comments = [x for x in issue.comments if x.id != comment.id]
-    apply(gh, repo, number, claims.decide_comment(issue, comment, now), dry_run)
+    # Labels and assignees are those at run time, so leave out what they
+    # already reflect: removing an absent label is a 404 that fails the run.
+    acts = claims.effective(issue, claims.decide_comment(issue, comment, now))
+    apply(gh, repo, number, acts, dry_run)
 
 
 def on_pull_request(gh, repo: str, event: dict, now: datetime, dry_run: bool = False) -> bool:
@@ -98,7 +101,8 @@ def on_pull_request(gh, repo: str, event: dict, now: datetime, dry_run: bool = F
 
 def sweep(gh, repo: str, now: datetime, dry_run: bool = False) -> None:
     for number in gh.claimed_issues(repo):
-        apply(gh, repo, number, claims.decide_sweep(gh.issue(repo, number), now), dry_run)
+        issue = gh.issue(repo, number)
+        apply(gh, repo, number, claims.effective(issue, claims.decide_sweep(issue, now)), dry_run)
     catch_up(gh, repo, now, dry_run)
 
 

@@ -267,7 +267,15 @@ class GhBackend:
                 f"body={arg}",
             ],
         }[kind]
-        run(cmd)
+        try:
+            run(cmd)
+        except GhError as error:
+            # The label or assignee is already gone: the issue is in the state
+            # the bot wants, and the actions after this one must still run.
+            if kind in {"label_remove", "unassign"} and error.status == 404:
+                print(f"{repo}#{number}: {kind} {arg!r} already done (HTTP 404)")
+                return
+            raise
 
     # ---- leases -------------------------------------------------------
 

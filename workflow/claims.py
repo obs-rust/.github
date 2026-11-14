@@ -484,6 +484,16 @@ def decide_command(issue: Issue, comment: Comment, now: datetime) -> list[tuple]
         if mine:
             if investigation and INVESTIGATE not in issue.labels and READY not in issue.labels:
                 return [("label_add", INVESTIGATE), ("react", comment.id)]
+            # An assignment by hand (or one made before this run started) has
+            # no granted claim yet, and the PR check needs one: grant this one.
+            # A holder with a granted claim who claims again stays silent.
+            if not any(
+                same(c.author, who)
+                and (CLAIM_RE.match(c.first_line()) or TAKEOVER_RE.match(c.first_line()))
+                and c.granted
+                for c in issue.comments
+            ):
+                return [("react", comment.id)]
             return []
         if claim and not is_stale(issue, claim, now):
             return reject(

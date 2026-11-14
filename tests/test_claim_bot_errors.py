@@ -81,7 +81,7 @@ class ClaimWriteErrors(unittest.TestCase):
 
     def test_assign_403_in_comment_mode_still_raises(self):
         backend = Mock()
-        backend.issue.return_value = SimpleNamespace(comments=[])
+        backend.issue.return_value = SimpleNamespace(comments=[], labels=set(), assignees=[])
         backend.apply_issue.side_effect = gh.GhError("CLI", "issue edit", 403, "denied")
         event = {
             "issue": {"number": 1},
