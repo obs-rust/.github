@@ -19,7 +19,9 @@ class ClaimWriteErrors(unittest.TestCase):
         method = "DELETE" if kind == "label_remove" else "POST"
         backend = Mock()
         backend.issue.return_value = SimpleNamespace(
-            labels={"claim-conflict"} if kind == "label_remove" else set(), comments=[]
+            labels={"claim-conflict"} if kind == "label_remove" else set(),
+            comments=[],
+            closed=False,
         )
 
         def write(repo, number, action):
@@ -150,7 +152,7 @@ class ForkPrExplanation(unittest.TestCase):
 
     def run_check(self, reasons):
         backend = Mock()
-        backend.issue.return_value = SimpleNamespace(labels=set(), comments=[])
+        backend.issue.return_value = SimpleNamespace(labels=set(), comments=[], closed=False)
         backend.apply_issue.side_effect = gh.GhError(
             "POST",
             "repos/obs-rust/obs-studio/issues/5547/comments",

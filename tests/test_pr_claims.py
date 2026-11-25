@@ -41,6 +41,20 @@ class PullRequestClaims(unittest.TestCase):
         self.assertIn("claim-conflict", self.w.labels(R, pr))
         self.assertIn("closed", self.w.bot_comments(R, pr)[0])
 
+    def test_an_event_that_runs_after_the_merge_writes_nothing(self):
+        # obs-rust/.github#36: an `edited` event queued before #35 merged ran
+        # after the merge had closed #34, read the payload's `open` and
+        # labelled the merged PR with a false "is closed" conflict.
+        issue = self.w.open_issue(R, labels={"ready"})
+        self.w.comment(R, issue, "alice", "Claiming: fix")
+        event = self.event(f"Fixes #{issue}", action="edited")
+        pr = event["pull_request"]["number"]
+        self.w.merge(R, pr)
+        self.w.close(R, issue)
+        self.assertTrue(self.check(event))
+        self.assertNotIn("claim-conflict", self.w.labels(R, pr))
+        self.assertEqual(self.w.bot_comments(R, pr), [])
+
     def test_ready_assignee_without_claim_comment_is_flagged(self):
         issue = self.w.open_issue(R, labels={"ready"})
         self.w.gh.apply_issue(R, issue, ("assign", "alice"))

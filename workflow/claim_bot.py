@@ -72,8 +72,14 @@ def on_pull_request(gh, repo: str, event: dict, now: datetime, dry_run: bool = F
     pr = event["pull_request"]
     if pr.get("state", "open") != "open":
         return
-    reasons = pr_claims.conflicts(gh, repo, pr)
+    # The payload is from when the event fired. A run that waited for a
+    # runner can start after the merge, which closes the issues the PR fixes:
+    # check the live state, or the merged PR gets a false conflict (#36).
     current = gh.issue(repo, pr["number"])
+    if current.closed:
+        log(f"{repo}#{pr['number']}: closed since the event; nothing to check")
+        return True
+    reasons = pr_claims.conflicts(gh, repo, pr)
     actions = []
     if reasons:
         if pr_claims.LABEL not in current.labels:
