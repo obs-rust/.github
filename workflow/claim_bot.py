@@ -96,7 +96,33 @@ def on_pull_request(gh, repo: str, event: dict, now: datetime, dry_run: bool = F
             if action[0] not in {"label_add", "label_remove", "comment", "react"}:
                 raise
             log(f"::warning::{repo}#{pr['number']}: {action[0]} failed: {error}")
+    if reasons:
+        report(reasons)
     return not reasons
+
+
+HOW_TO_FIX = (
+    "Comment `Claiming: <plan>` on the issue (it must be Ready), ask a maintainer "
+    "for `/reassign`, or change the closing reference to `Refs #N`. Then push or "
+    "edit the PR to run this check again."
+)
+
+
+def report(reasons: list[str]) -> None:
+    """Show the conflict on the failed check itself (#34).
+
+    A fork PR's token cannot label or comment (HTTP 403), so the annotation
+    and the step summary are the only places a fork author sees the reasons.
+    """
+    listed = "\n".join("- " + reason for reason in reasons)
+    # Workflow command data: escape % and line breaks, one command per line.
+    data = f"{listed}\n\n{HOW_TO_FIX}"
+    data = data.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error title=Claim conflict::{data}", flush=True)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as f:
+            f.write(f"## Claim conflict\n\n{listed}\n\n{HOW_TO_FIX}\n")
 
 
 def sweep(gh, repo: str, now: datetime, dry_run: bool = False) -> None:

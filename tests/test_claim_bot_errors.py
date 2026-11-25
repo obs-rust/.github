@@ -142,3 +142,63 @@ class GhRetries(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
         self.assertEqual(caught.exception.method, "GET")
         self.assertEqual(caught.exception.path, "repos/o/r/issues")
+
+
+class ForkPrExplanation(unittest.TestCase):
+    """#34: a fork PR's token cannot label or comment, so the failed check
+    itself must say why (annotation and step summary)."""
+
+    def run_check(self, reasons):
+        backend = Mock()
+        backend.issue.return_value = SimpleNamespace(labels=set(), comments=[])
+        backend.apply_issue.side_effect = gh.GhError(
+            "POST",
+            "repos/obs-rust/obs-studio/issues/5547/comments",
+            403,
+            "Resource not accessible by integration",
+        )
+        event = {"action": "synchronize", "pull_request": {"number": 5547}}
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = os.path.join(tmp, "summary.md")
+            event_path = os.path.join(tmp, "event.json")
+            with open(event_path, "w", encoding="utf-8") as f:
+                json.dump(event, f)
+            with (
+                patch.dict(os.environ, GITHUB_EVENT_PATH=event_path, GITHUB_STEP_SUMMARY=summary),
+                patch("sys.argv", ["claim_bot", "pr", "--repo", "obs-rust/obs-studio"]),
+                patch.object(claim_bot, "backend", return_value=backend),
+                patch.object(claim_bot.pr_claims, "conflicts", return_value=reasons),
+                contextlib.redirect_stdout(output),
+                patch.object(claim_bot, "log"),
+            ):
+                result = claim_bot.main()
+            text = ""
+            if os.path.exists(summary):
+                with open(summary, encoding="utf-8") as f:
+                    text = f.read()
+        return result, output.getvalue(), text
+
+    def test_a_conflict_is_explained_on_the_failed_check_when_writes_fail(self):
+        reason = "obs-rust/obs-studio#5134 has no active claim"
+        result, stdout, summary = self.run_check([reason])
+        self.assertEqual(result, 1)
+        errors = [line for line in stdout.splitlines() if line.startswith("::error")]
+        self.assertEqual(len(errors), 1, stdout)
+        self.assertIn(reason, errors[0])
+        self.assertIn("Claiming:", errors[0])
+        self.assertIn(reason, summary)
+        self.assertIn("Claiming:", summary)
+
+    def test_an_annotation_keeps_a_multi_line_explanation_on_one_line(self):
+        reasons = ["#1 is not ready", "#2 has no active claim"]
+        _, stdout, _ = self.run_check(reasons)
+        error = next(line for line in stdout.splitlines() if line.startswith("::error"))
+        self.assertIn("#1 is not ready%0A", error)
+        self.assertIn("#2 has no active claim", error)
+
+    def test_a_clean_pr_writes_no_error_or_summary(self):
+        result, stdout, summary = self.run_check([])
+        self.assertEqual(result, 0)
+        self.assertNotIn("::error", stdout)
+        self.assertEqual(summary, "")
